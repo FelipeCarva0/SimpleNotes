@@ -1,0 +1,16 @@
+Especificação da aplicação:
+Bloco de notas simples. Aplicação mobile de organização de texto de forma segura.
+
+Requisitos funcionais:
+O usuario pode criar(CRUD) um arquivo de texto, chamado página.
+Em uma página o usuario pode pesquisar por um palavra ou frase especifica.
+Toda conteúdo de cada pagina deve ser datado pelo sistema de forma automatica, respeitando que cada linha contenha uma data, e esta data é definida inserção de conteúdo na linha, futuras alterações na linha não interefere na data, ao não ser que a linha seja totalmente apagada e não tenha mais textos nas linhas seguintes.
+O usuario pode criar(CRUD) um grupo de textos, chamado bloco(Uma pasta onde coleciona texto(paginas) de alguma categoria desejada).
+Ao abrir o aplicativo, a primeira tela são suas paginas e seus blocos cada um nomeado com um título.
+O aplicativo trabalha apenas com txt.
+Fornece a opção de criptografar os dados, requirindo uma senha definida pelo usuario para acessar a pagina e o bloco. O conteudo fica criptografado nos arquivos locais.
+Permite o compartilhamento de arquivos, tanto exportando como importando. Mas apenas txt.
+
+Requisitos não funionais:
+O aplicativo funciona totalmente e prioritariamente offline.
+Simples, intuitivo, rápido e leve.
