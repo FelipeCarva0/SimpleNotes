@@ -1,6 +1,6 @@
 # Especificação da Aplicação — Bloco de Notas Seguro
 
-**Versão:** 2.0 (atualizada após discussão de arquitetura)
+**Versão:** 2.0 
 **Plataforma:** Mobile (Flutter)
 
 ## Visão geral
