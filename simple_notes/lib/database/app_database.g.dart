@@ -513,6 +513,18 @@ class $PagesTable extends Pages with TableInfo<$PagesTable, PageRow> {
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _draftContentMeta = const VerificationMeta(
+    'draftContent',
+  );
+  @override
+  late final GeneratedColumn<String> draftContent = GeneratedColumn<String>(
+    'draft_content',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -523,6 +535,7 @@ class $PagesTable extends Pages with TableInfo<$PagesTable, PageRow> {
     isEncrypted,
     passwordHash,
     salt,
+    draftContent,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -595,6 +608,15 @@ class $PagesTable extends Pages with TableInfo<$PagesTable, PageRow> {
         salt.isAcceptableOrUnknown(data['salt']!, _saltMeta),
       );
     }
+    if (data.containsKey('draft_content')) {
+      context.handle(
+        _draftContentMeta,
+        draftContent.isAcceptableOrUnknown(
+          data['draft_content']!,
+          _draftContentMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -636,6 +658,10 @@ class $PagesTable extends Pages with TableInfo<$PagesTable, PageRow> {
         DriftSqlType.string,
         data['${effectivePrefix}salt'],
       ),
+      draftContent: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}draft_content'],
+      )!,
     );
   }
 
@@ -654,6 +680,7 @@ class PageRow extends DataClass implements Insertable<PageRow> {
   final bool isEncrypted;
   final String? passwordHash;
   final String? salt;
+  final String draftContent;
   const PageRow({
     required this.id,
     this.blockId,
@@ -663,6 +690,7 @@ class PageRow extends DataClass implements Insertable<PageRow> {
     required this.isEncrypted,
     this.passwordHash,
     this.salt,
+    required this.draftContent,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -681,6 +709,7 @@ class PageRow extends DataClass implements Insertable<PageRow> {
     if (!nullToAbsent || salt != null) {
       map['salt'] = Variable<String>(salt);
     }
+    map['draft_content'] = Variable<String>(draftContent);
     return map;
   }
 
@@ -698,6 +727,7 @@ class PageRow extends DataClass implements Insertable<PageRow> {
           ? const Value.absent()
           : Value(passwordHash),
       salt: salt == null && nullToAbsent ? const Value.absent() : Value(salt),
+      draftContent: Value(draftContent),
     );
   }
 
@@ -715,6 +745,7 @@ class PageRow extends DataClass implements Insertable<PageRow> {
       isEncrypted: serializer.fromJson<bool>(json['isEncrypted']),
       passwordHash: serializer.fromJson<String?>(json['passwordHash']),
       salt: serializer.fromJson<String?>(json['salt']),
+      draftContent: serializer.fromJson<String>(json['draftContent']),
     );
   }
   @override
@@ -729,6 +760,7 @@ class PageRow extends DataClass implements Insertable<PageRow> {
       'isEncrypted': serializer.toJson<bool>(isEncrypted),
       'passwordHash': serializer.toJson<String?>(passwordHash),
       'salt': serializer.toJson<String?>(salt),
+      'draftContent': serializer.toJson<String>(draftContent),
     };
   }
 
@@ -741,6 +773,7 @@ class PageRow extends DataClass implements Insertable<PageRow> {
     bool? isEncrypted,
     Value<String?> passwordHash = const Value.absent(),
     Value<String?> salt = const Value.absent(),
+    String? draftContent,
   }) => PageRow(
     id: id ?? this.id,
     blockId: blockId.present ? blockId.value : this.blockId,
@@ -750,6 +783,7 @@ class PageRow extends DataClass implements Insertable<PageRow> {
     isEncrypted: isEncrypted ?? this.isEncrypted,
     passwordHash: passwordHash.present ? passwordHash.value : this.passwordHash,
     salt: salt.present ? salt.value : this.salt,
+    draftContent: draftContent ?? this.draftContent,
   );
   PageRow copyWithCompanion(PagesCompanion data) {
     return PageRow(
@@ -765,6 +799,9 @@ class PageRow extends DataClass implements Insertable<PageRow> {
           ? data.passwordHash.value
           : this.passwordHash,
       salt: data.salt.present ? data.salt.value : this.salt,
+      draftContent: data.draftContent.present
+          ? data.draftContent.value
+          : this.draftContent,
     );
   }
 
@@ -778,7 +815,8 @@ class PageRow extends DataClass implements Insertable<PageRow> {
           ..write('updatedAt: $updatedAt, ')
           ..write('isEncrypted: $isEncrypted, ')
           ..write('passwordHash: $passwordHash, ')
-          ..write('salt: $salt')
+          ..write('salt: $salt, ')
+          ..write('draftContent: $draftContent')
           ..write(')'))
         .toString();
   }
@@ -793,6 +831,7 @@ class PageRow extends DataClass implements Insertable<PageRow> {
     isEncrypted,
     passwordHash,
     salt,
+    draftContent,
   );
   @override
   bool operator ==(Object other) =>
@@ -805,7 +844,8 @@ class PageRow extends DataClass implements Insertable<PageRow> {
           other.updatedAt == this.updatedAt &&
           other.isEncrypted == this.isEncrypted &&
           other.passwordHash == this.passwordHash &&
-          other.salt == this.salt);
+          other.salt == this.salt &&
+          other.draftContent == this.draftContent);
 }
 
 class PagesCompanion extends UpdateCompanion<PageRow> {
@@ -817,6 +857,7 @@ class PagesCompanion extends UpdateCompanion<PageRow> {
   final Value<bool> isEncrypted;
   final Value<String?> passwordHash;
   final Value<String?> salt;
+  final Value<String> draftContent;
   final Value<int> rowid;
   const PagesCompanion({
     this.id = const Value.absent(),
@@ -827,6 +868,7 @@ class PagesCompanion extends UpdateCompanion<PageRow> {
     this.isEncrypted = const Value.absent(),
     this.passwordHash = const Value.absent(),
     this.salt = const Value.absent(),
+    this.draftContent = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   PagesCompanion.insert({
@@ -838,6 +880,7 @@ class PagesCompanion extends UpdateCompanion<PageRow> {
     this.isEncrypted = const Value.absent(),
     this.passwordHash = const Value.absent(),
     this.salt = const Value.absent(),
+    this.draftContent = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        title = Value(title),
@@ -852,6 +895,7 @@ class PagesCompanion extends UpdateCompanion<PageRow> {
     Expression<bool>? isEncrypted,
     Expression<String>? passwordHash,
     Expression<String>? salt,
+    Expression<String>? draftContent,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -863,6 +907,7 @@ class PagesCompanion extends UpdateCompanion<PageRow> {
       if (isEncrypted != null) 'is_encrypted': isEncrypted,
       if (passwordHash != null) 'password_hash': passwordHash,
       if (salt != null) 'salt': salt,
+      if (draftContent != null) 'draft_content': draftContent,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -876,6 +921,7 @@ class PagesCompanion extends UpdateCompanion<PageRow> {
     Value<bool>? isEncrypted,
     Value<String?>? passwordHash,
     Value<String?>? salt,
+    Value<String>? draftContent,
     Value<int>? rowid,
   }) {
     return PagesCompanion(
@@ -887,6 +933,7 @@ class PagesCompanion extends UpdateCompanion<PageRow> {
       isEncrypted: isEncrypted ?? this.isEncrypted,
       passwordHash: passwordHash ?? this.passwordHash,
       salt: salt ?? this.salt,
+      draftContent: draftContent ?? this.draftContent,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -918,6 +965,9 @@ class PagesCompanion extends UpdateCompanion<PageRow> {
     if (salt.present) {
       map['salt'] = Variable<String>(salt.value);
     }
+    if (draftContent.present) {
+      map['draft_content'] = Variable<String>(draftContent.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -935,6 +985,7 @@ class PagesCompanion extends UpdateCompanion<PageRow> {
           ..write('isEncrypted: $isEncrypted, ')
           ..write('passwordHash: $passwordHash, ')
           ..write('salt: $salt, ')
+          ..write('draftContent: $draftContent, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -1698,6 +1749,7 @@ typedef $$PagesTableCreateCompanionBuilder =
       Value<bool> isEncrypted,
       Value<String?> passwordHash,
       Value<String?> salt,
+      Value<String> draftContent,
       Value<int> rowid,
     });
 typedef $$PagesTableUpdateCompanionBuilder =
@@ -1710,6 +1762,7 @@ typedef $$PagesTableUpdateCompanionBuilder =
       Value<bool> isEncrypted,
       Value<String?> passwordHash,
       Value<String?> salt,
+      Value<String> draftContent,
       Value<int> rowid,
     });
 
@@ -1794,6 +1847,11 @@ class $$PagesTableFilterComposer extends Composer<_$AppDatabase, $PagesTable> {
 
   ColumnFilters<String> get salt => $composableBuilder(
     column: $table.salt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get draftContent => $composableBuilder(
+    column: $table.draftContent,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -1890,6 +1948,11 @@ class $$PagesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get draftContent => $composableBuilder(
+    column: $table.draftContent,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$BlocksTableOrderingComposer get blockId {
     final $$BlocksTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -1947,6 +2010,11 @@ class $$PagesTableAnnotationComposer
 
   GeneratedColumn<String> get salt =>
       $composableBuilder(column: $table.salt, builder: (column) => column);
+
+  GeneratedColumn<String> get draftContent => $composableBuilder(
+    column: $table.draftContent,
+    builder: (column) => column,
+  );
 
   $$BlocksTableAnnotationComposer get blockId {
     final $$BlocksTableAnnotationComposer composer = $composerBuilder(
@@ -2033,6 +2101,7 @@ class $$PagesTableTableManager
                 Value<bool> isEncrypted = const Value.absent(),
                 Value<String?> passwordHash = const Value.absent(),
                 Value<String?> salt = const Value.absent(),
+                Value<String> draftContent = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => PagesCompanion(
                 id: id,
@@ -2043,6 +2112,7 @@ class $$PagesTableTableManager
                 isEncrypted: isEncrypted,
                 passwordHash: passwordHash,
                 salt: salt,
+                draftContent: draftContent,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -2055,6 +2125,7 @@ class $$PagesTableTableManager
                 Value<bool> isEncrypted = const Value.absent(),
                 Value<String?> passwordHash = const Value.absent(),
                 Value<String?> salt = const Value.absent(),
+                Value<String> draftContent = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => PagesCompanion.insert(
                 id: id,
@@ -2065,6 +2136,7 @@ class $$PagesTableTableManager
                 isEncrypted: isEncrypted,
                 passwordHash: passwordHash,
                 salt: salt,
+                draftContent: draftContent,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

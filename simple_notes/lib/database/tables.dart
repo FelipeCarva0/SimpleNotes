@@ -23,6 +23,7 @@ class Pages extends Table {
   BoolColumn get isEncrypted => boolean().withDefault(const Constant(false))();
   TextColumn get passwordHash => text().nullable()();
   TextColumn get salt => text().nullable()();
+  TextColumn get draftContent => text().withDefault(const Constant(''))();
 
   @override
   Set<Column> get primaryKey => {id};

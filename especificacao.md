@@ -110,3 +110,44 @@ Desenvolvimento incremental por sprints, priorizando funcionalidades que podem s
 - **Diff de texto:** `diff_match_patch` (modo linha) ou implementação própria baseada em Myers diff
 - **Criptografia:** `cryptography`/`encrypt` (AES-256-GCM) + derivação de chave via PBKDF2/Argon2, com salt gerenciado via `flutter_secure_storage`
 - **Import/Export:** `file_picker` + `share_plus`
+
+---
+
+## Estrutura de diretórios
+
+```text
+lib/
+├── main.dart
+├── app.dart                      # MaterialApp, theme, routes
+│
+├── database/
+│   ├── app_database.dart         # drift instance, migrations
+│   └── tables.dart               # Blocks, Pages, Lines tables (juntas, é pouca coisa)
+│
+├── models/
+│   ├── block.dart
+│   ├── page.dart
+│   └── line.dart
+│
+├── repositories/
+│   ├── block_repository.dart
+│   └── page_repository.dart      # cobre Page + Line (linha não existe sem página)
+│
+├── providers/
+│   ├── block_providers.dart
+│   └── page_providers.dart
+│
+├── diff/
+│   └── line_diff_engine.dart     # engine de diff linha a linha (Sprint 1)
+│
+├── screens/
+│   ├── home_screen.dart
+│   ├── block_form_screen.dart
+│   └── editor_screen.dart
+│
+├── widgets/                      # componentes reaproveitados entre telas
+│   └── ...
+│
+└── theme/
+    └── app_theme.dart
+```text

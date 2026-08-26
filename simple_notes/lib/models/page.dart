@@ -1,4 +1,3 @@
-// models/page.dart
 import 'line.dart';
 
 class NotePage {
@@ -8,6 +7,7 @@ class NotePage {
   final DateTime createdAt;
   final DateTime updatedAt;
   final bool isEncrypted;
+  final String draftContent;
   final List<Line> lines;
 
   const NotePage({
@@ -17,9 +17,9 @@ class NotePage {
     required this.createdAt,
     required this.updatedAt,
     this.isEncrypted = false,
+    this.draftContent = '',
     this.lines = const [],
   });
 
-  /// Reconstrói o texto do editor concatenando as linhas na ordem.
   String get fullText => lines.map((l) => l.content).join('\n');
 }

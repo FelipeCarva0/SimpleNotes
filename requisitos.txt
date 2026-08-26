@@ -14,3 +14,38 @@ Permite o compartilhamento de arquivos, tanto exportando como importando. Mas ap
 Requisitos não funionais:
 O aplicativo funciona totalmente e prioritariamente offline.
 Simples, intuitivo, rápido e leve.
+
+lib/
+├── main.dart
+├── app.dart                      # MaterialApp, theme, routes
+│
+├── database/
+│   ├── app_database.dart         # drift instance, migrations
+│   └── tables.dart               # Blocks, Pages, Lines tables (juntas, é pouca coisa)
+│
+├── models/
+│   ├── block.dart
+│   ├── page.dart
+│   └── line.dart
+│
+├── repositories/
+│   ├── block_repository.dart
+│   └── page_repository.dart      # cobre Page + Line (linha não existe sem página)
+│
+├── providers/
+│   ├── block_providers.dart
+│   └── page_providers.dart
+│
+├── diff/
+│   └── line_diff_engine.dart     # engine de diff linha a linha (Sprint 1)
+│
+├── screens/
+│   ├── home_screen.dart
+│   ├── block_form_screen.dart
+│   └── editor_screen.dart
+│
+├── widgets/                      # componentes reaproveitados entre telas
+│   └── ...
+│
+└── theme/
+    └── app_theme.dart
