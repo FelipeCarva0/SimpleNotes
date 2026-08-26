@@ -75,7 +75,12 @@ class PageRepository {
     final newContents = pageRow.draftContent.split('\n');
 
     await db.transaction(() async {
-      var position = existingCount;
+      final maxRow = await (db.selectOnly(db.lines)
+            ..addColumns([db.lines.position.max()])
+            ..where(db.lines.pageId.equals(pageId)))
+          .getSingleOrNull();
+      var position = (maxRow?.read(db.lines.position.max()) ?? -1) + 1;
+
       for (final content in newContents) {
         await db.into(db.lines).insert(
               LinesCompanion.insert(
@@ -130,6 +135,12 @@ class PageRepository {
               isDateManuallyEdited: l.isDateManuallyEdited,
             ))
         .toList();
+  }
+
+  Future<void> updateTitle(String id, String title) async {
+    await (db.update(db.pages)..where((p) => p.id.equals(id))).write(
+      PagesCompanion(title: Value(title), updatedAt: Value(DateTime.now())),
+    );
   }
 
   Future<NotePage> _toModelWithLines(PageRow row) async {

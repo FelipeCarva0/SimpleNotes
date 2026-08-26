@@ -42,6 +42,43 @@ class HomeScreen extends ConsumerWidget {
     );
   }
 
+  Future<void> _renamePage(BuildContext context, WidgetRef ref, String pageId, String currentTitle) async {
+    final controller = TextEditingController(text: currentTitle);
+    final newTitle = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Renomear página'),
+        content: TextField(controller: controller, autofocus: true),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: const Text('Salvar'),
+          ),
+        ],
+      ),
+    );
+
+    if (newTitle == null || newTitle.isEmpty || newTitle == currentTitle || !context.mounted) return;
+    await ref.read(pageRepositoryProvider).updateTitle(pageId, newTitle);
+  }
+
+  Future<void> _deletePage(BuildContext context, WidgetRef ref, String pageId, String title) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Excluir página?'),
+        content: Text('Isso vai apagar "$title" e todo o seu conteúdo permanentemente.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Excluir')),
+        ],
+      ),
+    );
+    if (confirm != true || !context.mounted) return;
+    await ref.read(pageRepositoryProvider).delete(pageId);
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final blocksAsync = ref.watch(blocksStreamProvider);
@@ -82,6 +119,19 @@ class HomeScreen extends ConsumerWidget {
                           ),
                         );
                       },
+                      trailing: PopupMenuButton<String>(
+                        onSelected: (value) {
+                          if (value == 'rename') {
+                            _renamePage(context, ref, page.id, page.title);
+                          } else if (value == 'delete') {
+                            _deletePage(context, ref, page.id, page.title);
+                          }
+                        },
+                        itemBuilder: (context) => const [
+                          PopupMenuItem(value: 'rename', child: Text('Renomear')),
+                          PopupMenuItem(value: 'delete', child: Text('Excluir')),
+                        ],
+                      ),
                     ),
                 ],
               );
@@ -96,3 +146,5 @@ class HomeScreen extends ConsumerWidget {
     );
   }
 }
+
+  
