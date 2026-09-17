@@ -1,42 +1,74 @@
 import 'package:drift/drift.dart';
 
-@DataClassName('BlockRow')
-class Blocks extends Table {
+/// Tipo de conteúdo de uma Mensagem (RF02). A ordem dos valores define o
+/// inteiro persistido pelo `intEnum` do drift — não reordenar depois que
+/// houver dados reais gravados, apenas adicionar novos valores ao final.
+enum MessageType { texto, imagem, video, audio, documento }
+
+/// RF04 — Tag (etiqueta colorida). Cada Mensagem referencia no máximo uma
+/// Tag (ver `Messages.tagId`); não há tabela associativa N:N.
+@DataClassName('TagRow')
+class Tags extends Table {
   TextColumn get id => text()();
-  TextColumn get name => text()();
-  DateTimeColumn get createdAt => dateTime()();
-  BoolColumn get isEncrypted => boolean().withDefault(const Constant(false))();
-  TextColumn get passwordHash => text().nullable()();
-  TextColumn get salt => text().nullable()();
+  TextColumn get nome => text()();
+  TextColumn get cor => text()(); // hex, ex: '#FF5722'
 
   @override
   Set<Column> get primaryKey => {id};
 }
 
-@DataClassName('PageRow')
-class Pages extends Table {
+/// RF01 — Conversa (antiga Página). Sem `blockId`: a entidade Bloco foi
+/// removida do escopo na v4.0 e esta migração elimina o resíduo que ainda
+/// existia no schema.
+@DataClassName('ConversationRow')
+class Conversations extends Table {
   TextColumn get id => text()();
-  TextColumn get blockId => text().nullable().references(Blocks, #id)();
-  TextColumn get title => text()();
-  DateTimeColumn get createdAt => dateTime()();
-  DateTimeColumn get updatedAt => dateTime()();
-  BoolColumn get isEncrypted => boolean().withDefault(const Constant(false))();
-  TextColumn get passwordHash => text().nullable()();
+  TextColumn get titulo => text()();
+  DateTimeColumn get criadoEm => dateTime()();
+  DateTimeColumn get atualizadoEm => dateTime()();
+
+  /// RF08 — trava apenas o acesso à Conversa inteira (bloqueio/desbloqueio),
+  /// sem distinção de cifragem por tipo de conteúdo.
+  BoolColumn get protegidoPorSenha =>
+      boolean().withDefault(const Constant(false))();
+  TextColumn get senhaHash => text().nullable()();
   TextColumn get salt => text().nullable()();
-  TextColumn get draftContent => text().withDefault(const Constant(''))();
+
+  /// RF02.1 — texto ainda não enviado, sem data associada.
+  TextColumn get rascunho => text().withDefault(const Constant(''))();
 
   @override
   Set<Column> get primaryKey => {id};
 }
 
-@DataClassName('LineRow')
-class Lines extends Table {
+/// RF02/RF03 — Mensagem (antiga Linha, generalizada para texto ou arquivo).
+/// Os campos `arquivo*` só são preenchidos quando `tipo != texto`.
+@DataClassName('MessageRow')
+class Messages extends Table {
   TextColumn get id => text()();
-  TextColumn get pageId => text().references(Pages, #id)();
+  TextColumn get conversationId => text().references(Conversations, #id)();
+
+  /// RF04 — no máximo uma Tag por Mensagem (nullable = sem tag).
+  TextColumn get tagId =>
+      text().nullable().references(Tags, #id, onDelete: KeyAction.setNull)();
+
   IntColumn get position => integer()();
-  TextColumn get content => text()();
-  DateTimeColumn get date => dateTime()();
-  BoolColumn get isDateManuallyEdited =>
+  IntColumn get tipo =>
+      intEnum<MessageType>().withDefault(const Constant(0))();
+
+  TextColumn get conteudoTexto => text().nullable()();
+
+  TextColumn get arquivoPath => text().nullable()();
+  TextColumn get arquivoNomeOriginal => text().nullable()();
+  TextColumn get arquivoNomeExibicao => text().nullable()();
+  TextColumn get arquivoMimeType => text().nullable()();
+  IntColumn get arquivoTamanhoBytes => integer().nullable()();
+
+  /// RF03 — apenas o dia, sem hora; atribuída no momento do envio e imutável
+  /// por edição de conteúdo (só muda via exclusão+reenvio ou sobrescrita
+  /// manual, ver `dataEditadaManualmente`).
+  DateTimeColumn get data => dateTime()();
+  BoolColumn get dataEditadaManualmente =>
       boolean().withDefault(const Constant(false))();
 
   @override

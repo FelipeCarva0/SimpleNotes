@@ -6,8 +6,8 @@ import 'package:simple_notes/app.dart';
 
 void main() {
   testWidgets('Home screen shows app title', (WidgetTester tester) async {
-    await tester.pumpWidget(const ProviderScope(child: SecureNotesApp()));
+    await tester.pumpWidget(const ProviderScope(child: ArquivoApp()));
 
-    expect(find.text('Secure Notes'), findsOneWidget);
+    expect(find.text('Arquivo'), findsOneWidget);
   });
 }

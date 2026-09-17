@@ -2,13 +2,13 @@
 import 'package:flutter/material.dart';
 import 'screens/home_screen.dart';
 
-class SecureNotesApp extends StatelessWidget {
-  const SecureNotesApp({super.key});
+class ArquivoApp extends StatelessWidget {
+  const ArquivoApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Secure Notes',
+      title: 'Arquivo',
       theme: ThemeData(useMaterial3: true, colorSchemeSeed: Colors.indigo),
       home: const HomeScreen(),
     );

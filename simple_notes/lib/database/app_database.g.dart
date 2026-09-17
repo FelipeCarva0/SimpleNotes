@@ -3,11 +3,12 @@
 part of 'app_database.dart';
 
 // ignore_for_file: type=lint
-class $BlocksTable extends Blocks with TableInfo<$BlocksTable, BlockRow> {
+class $ConversationsTable extends Conversations
+    with TableInfo<$ConversationsTable, ConversationRow> {
   @override
   final GeneratedDatabase attachedDatabase;
   final String? _alias;
-  $BlocksTable(this.attachedDatabase, [this._alias]);
+  $ConversationsTable(this.attachedDatabase, [this._alias]);
   static const VerificationMeta _idMeta = const VerificationMeta('id');
   @override
   late final GeneratedColumn<String> id = GeneratedColumn<String>(
@@ -17,47 +18,58 @@ class $BlocksTable extends Blocks with TableInfo<$BlocksTable, BlockRow> {
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
-  static const VerificationMeta _nameMeta = const VerificationMeta('name');
+  static const VerificationMeta _tituloMeta = const VerificationMeta('titulo');
   @override
-  late final GeneratedColumn<String> name = GeneratedColumn<String>(
-    'name',
+  late final GeneratedColumn<String> titulo = GeneratedColumn<String>(
+    'titulo',
     aliasedName,
     false,
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
-  static const VerificationMeta _createdAtMeta = const VerificationMeta(
-    'createdAt',
+  static const VerificationMeta _criadoEmMeta = const VerificationMeta(
+    'criadoEm',
   );
   @override
-  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
-    'created_at',
+  late final GeneratedColumn<DateTime> criadoEm = GeneratedColumn<DateTime>(
+    'criado_em',
     aliasedName,
     false,
     type: DriftSqlType.dateTime,
     requiredDuringInsert: true,
   );
-  static const VerificationMeta _isEncryptedMeta = const VerificationMeta(
-    'isEncrypted',
+  static const VerificationMeta _atualizadoEmMeta = const VerificationMeta(
+    'atualizadoEm',
   );
   @override
-  late final GeneratedColumn<bool> isEncrypted = GeneratedColumn<bool>(
-    'is_encrypted',
+  late final GeneratedColumn<DateTime> atualizadoEm = GeneratedColumn<DateTime>(
+    'atualizado_em',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _protegidoPorSenhaMeta = const VerificationMeta(
+    'protegidoPorSenha',
+  );
+  @override
+  late final GeneratedColumn<bool> protegidoPorSenha = GeneratedColumn<bool>(
+    'protegido_por_senha',
     aliasedName,
     false,
     type: DriftSqlType.bool,
     requiredDuringInsert: false,
     defaultConstraints: GeneratedColumn.constraintIsAlways(
-      'CHECK ("is_encrypted" IN (0, 1))',
+      'CHECK ("protegido_por_senha" IN (0, 1))',
     ),
     defaultValue: const Constant(false),
   );
-  static const VerificationMeta _passwordHashMeta = const VerificationMeta(
-    'passwordHash',
+  static const VerificationMeta _senhaHashMeta = const VerificationMeta(
+    'senhaHash',
   );
   @override
-  late final GeneratedColumn<String> passwordHash = GeneratedColumn<String>(
-    'password_hash',
+  late final GeneratedColumn<String> senhaHash = GeneratedColumn<String>(
+    'senha_hash',
     aliasedName,
     true,
     type: DriftSqlType.string,
@@ -72,453 +84,12 @@ class $BlocksTable extends Blocks with TableInfo<$BlocksTable, BlockRow> {
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
-  @override
-  List<GeneratedColumn> get $columns => [
-    id,
-    name,
-    createdAt,
-    isEncrypted,
-    passwordHash,
-    salt,
-  ];
-  @override
-  String get aliasedName => _alias ?? actualTableName;
-  @override
-  String get actualTableName => $name;
-  static const String $name = 'blocks';
-  @override
-  VerificationContext validateIntegrity(
-    Insertable<BlockRow> instance, {
-    bool isInserting = false,
-  }) {
-    final context = VerificationContext();
-    final data = instance.toColumns(true);
-    if (data.containsKey('id')) {
-      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
-    } else if (isInserting) {
-      context.missing(_idMeta);
-    }
-    if (data.containsKey('name')) {
-      context.handle(
-        _nameMeta,
-        name.isAcceptableOrUnknown(data['name']!, _nameMeta),
-      );
-    } else if (isInserting) {
-      context.missing(_nameMeta);
-    }
-    if (data.containsKey('created_at')) {
-      context.handle(
-        _createdAtMeta,
-        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
-      );
-    } else if (isInserting) {
-      context.missing(_createdAtMeta);
-    }
-    if (data.containsKey('is_encrypted')) {
-      context.handle(
-        _isEncryptedMeta,
-        isEncrypted.isAcceptableOrUnknown(
-          data['is_encrypted']!,
-          _isEncryptedMeta,
-        ),
-      );
-    }
-    if (data.containsKey('password_hash')) {
-      context.handle(
-        _passwordHashMeta,
-        passwordHash.isAcceptableOrUnknown(
-          data['password_hash']!,
-          _passwordHashMeta,
-        ),
-      );
-    }
-    if (data.containsKey('salt')) {
-      context.handle(
-        _saltMeta,
-        salt.isAcceptableOrUnknown(data['salt']!, _saltMeta),
-      );
-    }
-    return context;
-  }
-
-  @override
-  Set<GeneratedColumn> get $primaryKey => {id};
-  @override
-  BlockRow map(Map<String, dynamic> data, {String? tablePrefix}) {
-    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
-    return BlockRow(
-      id: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}id'],
-      )!,
-      name: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}name'],
-      )!,
-      createdAt: attachedDatabase.typeMapping.read(
-        DriftSqlType.dateTime,
-        data['${effectivePrefix}created_at'],
-      )!,
-      isEncrypted: attachedDatabase.typeMapping.read(
-        DriftSqlType.bool,
-        data['${effectivePrefix}is_encrypted'],
-      )!,
-      passwordHash: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}password_hash'],
-      ),
-      salt: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}salt'],
-      ),
-    );
-  }
-
-  @override
-  $BlocksTable createAlias(String alias) {
-    return $BlocksTable(attachedDatabase, alias);
-  }
-}
-
-class BlockRow extends DataClass implements Insertable<BlockRow> {
-  final String id;
-  final String name;
-  final DateTime createdAt;
-  final bool isEncrypted;
-  final String? passwordHash;
-  final String? salt;
-  const BlockRow({
-    required this.id,
-    required this.name,
-    required this.createdAt,
-    required this.isEncrypted,
-    this.passwordHash,
-    this.salt,
-  });
-  @override
-  Map<String, Expression> toColumns(bool nullToAbsent) {
-    final map = <String, Expression>{};
-    map['id'] = Variable<String>(id);
-    map['name'] = Variable<String>(name);
-    map['created_at'] = Variable<DateTime>(createdAt);
-    map['is_encrypted'] = Variable<bool>(isEncrypted);
-    if (!nullToAbsent || passwordHash != null) {
-      map['password_hash'] = Variable<String>(passwordHash);
-    }
-    if (!nullToAbsent || salt != null) {
-      map['salt'] = Variable<String>(salt);
-    }
-    return map;
-  }
-
-  BlocksCompanion toCompanion(bool nullToAbsent) {
-    return BlocksCompanion(
-      id: Value(id),
-      name: Value(name),
-      createdAt: Value(createdAt),
-      isEncrypted: Value(isEncrypted),
-      passwordHash: passwordHash == null && nullToAbsent
-          ? const Value.absent()
-          : Value(passwordHash),
-      salt: salt == null && nullToAbsent ? const Value.absent() : Value(salt),
-    );
-  }
-
-  factory BlockRow.fromJson(
-    Map<String, dynamic> json, {
-    ValueSerializer? serializer,
-  }) {
-    serializer ??= driftRuntimeOptions.defaultSerializer;
-    return BlockRow(
-      id: serializer.fromJson<String>(json['id']),
-      name: serializer.fromJson<String>(json['name']),
-      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
-      isEncrypted: serializer.fromJson<bool>(json['isEncrypted']),
-      passwordHash: serializer.fromJson<String?>(json['passwordHash']),
-      salt: serializer.fromJson<String?>(json['salt']),
-    );
-  }
-  @override
-  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
-    serializer ??= driftRuntimeOptions.defaultSerializer;
-    return <String, dynamic>{
-      'id': serializer.toJson<String>(id),
-      'name': serializer.toJson<String>(name),
-      'createdAt': serializer.toJson<DateTime>(createdAt),
-      'isEncrypted': serializer.toJson<bool>(isEncrypted),
-      'passwordHash': serializer.toJson<String?>(passwordHash),
-      'salt': serializer.toJson<String?>(salt),
-    };
-  }
-
-  BlockRow copyWith({
-    String? id,
-    String? name,
-    DateTime? createdAt,
-    bool? isEncrypted,
-    Value<String?> passwordHash = const Value.absent(),
-    Value<String?> salt = const Value.absent(),
-  }) => BlockRow(
-    id: id ?? this.id,
-    name: name ?? this.name,
-    createdAt: createdAt ?? this.createdAt,
-    isEncrypted: isEncrypted ?? this.isEncrypted,
-    passwordHash: passwordHash.present ? passwordHash.value : this.passwordHash,
-    salt: salt.present ? salt.value : this.salt,
-  );
-  BlockRow copyWithCompanion(BlocksCompanion data) {
-    return BlockRow(
-      id: data.id.present ? data.id.value : this.id,
-      name: data.name.present ? data.name.value : this.name,
-      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
-      isEncrypted: data.isEncrypted.present
-          ? data.isEncrypted.value
-          : this.isEncrypted,
-      passwordHash: data.passwordHash.present
-          ? data.passwordHash.value
-          : this.passwordHash,
-      salt: data.salt.present ? data.salt.value : this.salt,
-    );
-  }
-
-  @override
-  String toString() {
-    return (StringBuffer('BlockRow(')
-          ..write('id: $id, ')
-          ..write('name: $name, ')
-          ..write('createdAt: $createdAt, ')
-          ..write('isEncrypted: $isEncrypted, ')
-          ..write('passwordHash: $passwordHash, ')
-          ..write('salt: $salt')
-          ..write(')'))
-        .toString();
-  }
-
-  @override
-  int get hashCode =>
-      Object.hash(id, name, createdAt, isEncrypted, passwordHash, salt);
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      (other is BlockRow &&
-          other.id == this.id &&
-          other.name == this.name &&
-          other.createdAt == this.createdAt &&
-          other.isEncrypted == this.isEncrypted &&
-          other.passwordHash == this.passwordHash &&
-          other.salt == this.salt);
-}
-
-class BlocksCompanion extends UpdateCompanion<BlockRow> {
-  final Value<String> id;
-  final Value<String> name;
-  final Value<DateTime> createdAt;
-  final Value<bool> isEncrypted;
-  final Value<String?> passwordHash;
-  final Value<String?> salt;
-  final Value<int> rowid;
-  const BlocksCompanion({
-    this.id = const Value.absent(),
-    this.name = const Value.absent(),
-    this.createdAt = const Value.absent(),
-    this.isEncrypted = const Value.absent(),
-    this.passwordHash = const Value.absent(),
-    this.salt = const Value.absent(),
-    this.rowid = const Value.absent(),
-  });
-  BlocksCompanion.insert({
-    required String id,
-    required String name,
-    required DateTime createdAt,
-    this.isEncrypted = const Value.absent(),
-    this.passwordHash = const Value.absent(),
-    this.salt = const Value.absent(),
-    this.rowid = const Value.absent(),
-  }) : id = Value(id),
-       name = Value(name),
-       createdAt = Value(createdAt);
-  static Insertable<BlockRow> custom({
-    Expression<String>? id,
-    Expression<String>? name,
-    Expression<DateTime>? createdAt,
-    Expression<bool>? isEncrypted,
-    Expression<String>? passwordHash,
-    Expression<String>? salt,
-    Expression<int>? rowid,
-  }) {
-    return RawValuesInsertable({
-      if (id != null) 'id': id,
-      if (name != null) 'name': name,
-      if (createdAt != null) 'created_at': createdAt,
-      if (isEncrypted != null) 'is_encrypted': isEncrypted,
-      if (passwordHash != null) 'password_hash': passwordHash,
-      if (salt != null) 'salt': salt,
-      if (rowid != null) 'rowid': rowid,
-    });
-  }
-
-  BlocksCompanion copyWith({
-    Value<String>? id,
-    Value<String>? name,
-    Value<DateTime>? createdAt,
-    Value<bool>? isEncrypted,
-    Value<String?>? passwordHash,
-    Value<String?>? salt,
-    Value<int>? rowid,
-  }) {
-    return BlocksCompanion(
-      id: id ?? this.id,
-      name: name ?? this.name,
-      createdAt: createdAt ?? this.createdAt,
-      isEncrypted: isEncrypted ?? this.isEncrypted,
-      passwordHash: passwordHash ?? this.passwordHash,
-      salt: salt ?? this.salt,
-      rowid: rowid ?? this.rowid,
-    );
-  }
-
-  @override
-  Map<String, Expression> toColumns(bool nullToAbsent) {
-    final map = <String, Expression>{};
-    if (id.present) {
-      map['id'] = Variable<String>(id.value);
-    }
-    if (name.present) {
-      map['name'] = Variable<String>(name.value);
-    }
-    if (createdAt.present) {
-      map['created_at'] = Variable<DateTime>(createdAt.value);
-    }
-    if (isEncrypted.present) {
-      map['is_encrypted'] = Variable<bool>(isEncrypted.value);
-    }
-    if (passwordHash.present) {
-      map['password_hash'] = Variable<String>(passwordHash.value);
-    }
-    if (salt.present) {
-      map['salt'] = Variable<String>(salt.value);
-    }
-    if (rowid.present) {
-      map['rowid'] = Variable<int>(rowid.value);
-    }
-    return map;
-  }
-
-  @override
-  String toString() {
-    return (StringBuffer('BlocksCompanion(')
-          ..write('id: $id, ')
-          ..write('name: $name, ')
-          ..write('createdAt: $createdAt, ')
-          ..write('isEncrypted: $isEncrypted, ')
-          ..write('passwordHash: $passwordHash, ')
-          ..write('salt: $salt, ')
-          ..write('rowid: $rowid')
-          ..write(')'))
-        .toString();
-  }
-}
-
-class $PagesTable extends Pages with TableInfo<$PagesTable, PageRow> {
-  @override
-  final GeneratedDatabase attachedDatabase;
-  final String? _alias;
-  $PagesTable(this.attachedDatabase, [this._alias]);
-  static const VerificationMeta _idMeta = const VerificationMeta('id');
-  @override
-  late final GeneratedColumn<String> id = GeneratedColumn<String>(
-    'id',
-    aliasedName,
-    false,
-    type: DriftSqlType.string,
-    requiredDuringInsert: true,
-  );
-  static const VerificationMeta _blockIdMeta = const VerificationMeta(
-    'blockId',
+  static const VerificationMeta _rascunhoMeta = const VerificationMeta(
+    'rascunho',
   );
   @override
-  late final GeneratedColumn<String> blockId = GeneratedColumn<String>(
-    'block_id',
-    aliasedName,
-    true,
-    type: DriftSqlType.string,
-    requiredDuringInsert: false,
-    defaultConstraints: GeneratedColumn.constraintIsAlways(
-      'REFERENCES blocks (id)',
-    ),
-  );
-  static const VerificationMeta _titleMeta = const VerificationMeta('title');
-  @override
-  late final GeneratedColumn<String> title = GeneratedColumn<String>(
-    'title',
-    aliasedName,
-    false,
-    type: DriftSqlType.string,
-    requiredDuringInsert: true,
-  );
-  static const VerificationMeta _createdAtMeta = const VerificationMeta(
-    'createdAt',
-  );
-  @override
-  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
-    'created_at',
-    aliasedName,
-    false,
-    type: DriftSqlType.dateTime,
-    requiredDuringInsert: true,
-  );
-  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
-    'updatedAt',
-  );
-  @override
-  late final GeneratedColumn<DateTime> updatedAt = GeneratedColumn<DateTime>(
-    'updated_at',
-    aliasedName,
-    false,
-    type: DriftSqlType.dateTime,
-    requiredDuringInsert: true,
-  );
-  static const VerificationMeta _isEncryptedMeta = const VerificationMeta(
-    'isEncrypted',
-  );
-  @override
-  late final GeneratedColumn<bool> isEncrypted = GeneratedColumn<bool>(
-    'is_encrypted',
-    aliasedName,
-    false,
-    type: DriftSqlType.bool,
-    requiredDuringInsert: false,
-    defaultConstraints: GeneratedColumn.constraintIsAlways(
-      'CHECK ("is_encrypted" IN (0, 1))',
-    ),
-    defaultValue: const Constant(false),
-  );
-  static const VerificationMeta _passwordHashMeta = const VerificationMeta(
-    'passwordHash',
-  );
-  @override
-  late final GeneratedColumn<String> passwordHash = GeneratedColumn<String>(
-    'password_hash',
-    aliasedName,
-    true,
-    type: DriftSqlType.string,
-    requiredDuringInsert: false,
-  );
-  static const VerificationMeta _saltMeta = const VerificationMeta('salt');
-  @override
-  late final GeneratedColumn<String> salt = GeneratedColumn<String>(
-    'salt',
-    aliasedName,
-    true,
-    type: DriftSqlType.string,
-    requiredDuringInsert: false,
-  );
-  static const VerificationMeta _draftContentMeta = const VerificationMeta(
-    'draftContent',
-  );
-  @override
-  late final GeneratedColumn<String> draftContent = GeneratedColumn<String>(
-    'draft_content',
+  late final GeneratedColumn<String> rascunho = GeneratedColumn<String>(
+    'rascunho',
     aliasedName,
     false,
     type: DriftSqlType.string,
@@ -528,23 +99,22 @@ class $PagesTable extends Pages with TableInfo<$PagesTable, PageRow> {
   @override
   List<GeneratedColumn> get $columns => [
     id,
-    blockId,
-    title,
-    createdAt,
-    updatedAt,
-    isEncrypted,
-    passwordHash,
+    titulo,
+    criadoEm,
+    atualizadoEm,
+    protegidoPorSenha,
+    senhaHash,
     salt,
-    draftContent,
+    rascunho,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
   String get actualTableName => $name;
-  static const String $name = 'pages';
+  static const String $name = 'conversations';
   @override
   VerificationContext validateIntegrity(
-    Insertable<PageRow> instance, {
+    Insertable<ConversationRow> instance, {
     bool isInserting = false,
   }) {
     final context = VerificationContext();
@@ -554,52 +124,46 @@ class $PagesTable extends Pages with TableInfo<$PagesTable, PageRow> {
     } else if (isInserting) {
       context.missing(_idMeta);
     }
-    if (data.containsKey('block_id')) {
+    if (data.containsKey('titulo')) {
       context.handle(
-        _blockIdMeta,
-        blockId.isAcceptableOrUnknown(data['block_id']!, _blockIdMeta),
-      );
-    }
-    if (data.containsKey('title')) {
-      context.handle(
-        _titleMeta,
-        title.isAcceptableOrUnknown(data['title']!, _titleMeta),
+        _tituloMeta,
+        titulo.isAcceptableOrUnknown(data['titulo']!, _tituloMeta),
       );
     } else if (isInserting) {
-      context.missing(_titleMeta);
+      context.missing(_tituloMeta);
     }
-    if (data.containsKey('created_at')) {
+    if (data.containsKey('criado_em')) {
       context.handle(
-        _createdAtMeta,
-        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+        _criadoEmMeta,
+        criadoEm.isAcceptableOrUnknown(data['criado_em']!, _criadoEmMeta),
       );
     } else if (isInserting) {
-      context.missing(_createdAtMeta);
+      context.missing(_criadoEmMeta);
     }
-    if (data.containsKey('updated_at')) {
+    if (data.containsKey('atualizado_em')) {
       context.handle(
-        _updatedAtMeta,
-        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+        _atualizadoEmMeta,
+        atualizadoEm.isAcceptableOrUnknown(
+          data['atualizado_em']!,
+          _atualizadoEmMeta,
+        ),
       );
     } else if (isInserting) {
-      context.missing(_updatedAtMeta);
+      context.missing(_atualizadoEmMeta);
     }
-    if (data.containsKey('is_encrypted')) {
+    if (data.containsKey('protegido_por_senha')) {
       context.handle(
-        _isEncryptedMeta,
-        isEncrypted.isAcceptableOrUnknown(
-          data['is_encrypted']!,
-          _isEncryptedMeta,
+        _protegidoPorSenhaMeta,
+        protegidoPorSenha.isAcceptableOrUnknown(
+          data['protegido_por_senha']!,
+          _protegidoPorSenhaMeta,
         ),
       );
     }
-    if (data.containsKey('password_hash')) {
+    if (data.containsKey('senha_hash')) {
       context.handle(
-        _passwordHashMeta,
-        passwordHash.isAcceptableOrUnknown(
-          data['password_hash']!,
-          _passwordHashMeta,
-        ),
+        _senhaHashMeta,
+        senhaHash.isAcceptableOrUnknown(data['senha_hash']!, _senhaHashMeta),
       );
     }
     if (data.containsKey('salt')) {
@@ -608,13 +172,10 @@ class $PagesTable extends Pages with TableInfo<$PagesTable, PageRow> {
         salt.isAcceptableOrUnknown(data['salt']!, _saltMeta),
       );
     }
-    if (data.containsKey('draft_content')) {
+    if (data.containsKey('rascunho')) {
       context.handle(
-        _draftContentMeta,
-        draftContent.isAcceptableOrUnknown(
-          data['draft_content']!,
-          _draftContentMeta,
-        ),
+        _rascunhoMeta,
+        rascunho.isAcceptableOrUnknown(data['rascunho']!, _rascunhoMeta),
       );
     }
     return context;
@@ -623,129 +184,121 @@ class $PagesTable extends Pages with TableInfo<$PagesTable, PageRow> {
   @override
   Set<GeneratedColumn> get $primaryKey => {id};
   @override
-  PageRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+  ConversationRow map(Map<String, dynamic> data, {String? tablePrefix}) {
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
-    return PageRow(
+    return ConversationRow(
       id: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}id'],
       )!,
-      blockId: attachedDatabase.typeMapping.read(
+      titulo: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
-        data['${effectivePrefix}block_id'],
-      ),
-      title: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}title'],
+        data['${effectivePrefix}titulo'],
       )!,
-      createdAt: attachedDatabase.typeMapping.read(
+      criadoEm: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
-        data['${effectivePrefix}created_at'],
+        data['${effectivePrefix}criado_em'],
       )!,
-      updatedAt: attachedDatabase.typeMapping.read(
+      atualizadoEm: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
-        data['${effectivePrefix}updated_at'],
+        data['${effectivePrefix}atualizado_em'],
       )!,
-      isEncrypted: attachedDatabase.typeMapping.read(
+      protegidoPorSenha: attachedDatabase.typeMapping.read(
         DriftSqlType.bool,
-        data['${effectivePrefix}is_encrypted'],
+        data['${effectivePrefix}protegido_por_senha'],
       )!,
-      passwordHash: attachedDatabase.typeMapping.read(
+      senhaHash: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
-        data['${effectivePrefix}password_hash'],
+        data['${effectivePrefix}senha_hash'],
       ),
       salt: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}salt'],
       ),
-      draftContent: attachedDatabase.typeMapping.read(
+      rascunho: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
-        data['${effectivePrefix}draft_content'],
+        data['${effectivePrefix}rascunho'],
       )!,
     );
   }
 
   @override
-  $PagesTable createAlias(String alias) {
-    return $PagesTable(attachedDatabase, alias);
+  $ConversationsTable createAlias(String alias) {
+    return $ConversationsTable(attachedDatabase, alias);
   }
 }
 
-class PageRow extends DataClass implements Insertable<PageRow> {
+class ConversationRow extends DataClass implements Insertable<ConversationRow> {
   final String id;
-  final String? blockId;
-  final String title;
-  final DateTime createdAt;
-  final DateTime updatedAt;
-  final bool isEncrypted;
-  final String? passwordHash;
+  final String titulo;
+  final DateTime criadoEm;
+  final DateTime atualizadoEm;
+
+  /// RF08 — trava apenas o acesso à Conversa inteira (bloqueio/desbloqueio),
+  /// sem distinção de cifragem por tipo de conteúdo.
+  final bool protegidoPorSenha;
+  final String? senhaHash;
   final String? salt;
-  final String draftContent;
-  const PageRow({
+
+  /// RF02.1 — texto ainda não enviado, sem data associada.
+  final String rascunho;
+  const ConversationRow({
     required this.id,
-    this.blockId,
-    required this.title,
-    required this.createdAt,
-    required this.updatedAt,
-    required this.isEncrypted,
-    this.passwordHash,
+    required this.titulo,
+    required this.criadoEm,
+    required this.atualizadoEm,
+    required this.protegidoPorSenha,
+    this.senhaHash,
     this.salt,
-    required this.draftContent,
+    required this.rascunho,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['id'] = Variable<String>(id);
-    if (!nullToAbsent || blockId != null) {
-      map['block_id'] = Variable<String>(blockId);
-    }
-    map['title'] = Variable<String>(title);
-    map['created_at'] = Variable<DateTime>(createdAt);
-    map['updated_at'] = Variable<DateTime>(updatedAt);
-    map['is_encrypted'] = Variable<bool>(isEncrypted);
-    if (!nullToAbsent || passwordHash != null) {
-      map['password_hash'] = Variable<String>(passwordHash);
+    map['titulo'] = Variable<String>(titulo);
+    map['criado_em'] = Variable<DateTime>(criadoEm);
+    map['atualizado_em'] = Variable<DateTime>(atualizadoEm);
+    map['protegido_por_senha'] = Variable<bool>(protegidoPorSenha);
+    if (!nullToAbsent || senhaHash != null) {
+      map['senha_hash'] = Variable<String>(senhaHash);
     }
     if (!nullToAbsent || salt != null) {
       map['salt'] = Variable<String>(salt);
     }
-    map['draft_content'] = Variable<String>(draftContent);
+    map['rascunho'] = Variable<String>(rascunho);
     return map;
   }
 
-  PagesCompanion toCompanion(bool nullToAbsent) {
-    return PagesCompanion(
+  ConversationsCompanion toCompanion(bool nullToAbsent) {
+    return ConversationsCompanion(
       id: Value(id),
-      blockId: blockId == null && nullToAbsent
+      titulo: Value(titulo),
+      criadoEm: Value(criadoEm),
+      atualizadoEm: Value(atualizadoEm),
+      protegidoPorSenha: Value(protegidoPorSenha),
+      senhaHash: senhaHash == null && nullToAbsent
           ? const Value.absent()
-          : Value(blockId),
-      title: Value(title),
-      createdAt: Value(createdAt),
-      updatedAt: Value(updatedAt),
-      isEncrypted: Value(isEncrypted),
-      passwordHash: passwordHash == null && nullToAbsent
-          ? const Value.absent()
-          : Value(passwordHash),
+          : Value(senhaHash),
       salt: salt == null && nullToAbsent ? const Value.absent() : Value(salt),
-      draftContent: Value(draftContent),
+      rascunho: Value(rascunho),
     );
   }
 
-  factory PageRow.fromJson(
+  factory ConversationRow.fromJson(
     Map<String, dynamic> json, {
     ValueSerializer? serializer,
   }) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
-    return PageRow(
+    return ConversationRow(
       id: serializer.fromJson<String>(json['id']),
-      blockId: serializer.fromJson<String?>(json['blockId']),
-      title: serializer.fromJson<String>(json['title']),
-      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
-      updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
-      isEncrypted: serializer.fromJson<bool>(json['isEncrypted']),
-      passwordHash: serializer.fromJson<String?>(json['passwordHash']),
+      titulo: serializer.fromJson<String>(json['titulo']),
+      criadoEm: serializer.fromJson<DateTime>(json['criadoEm']),
+      atualizadoEm: serializer.fromJson<DateTime>(json['atualizadoEm']),
+      protegidoPorSenha: serializer.fromJson<bool>(json['protegidoPorSenha']),
+      senhaHash: serializer.fromJson<String?>(json['senhaHash']),
       salt: serializer.fromJson<String?>(json['salt']),
-      draftContent: serializer.fromJson<String>(json['draftContent']),
+      rascunho: serializer.fromJson<String>(json['rascunho']),
     );
   }
   @override
@@ -753,70 +306,63 @@ class PageRow extends DataClass implements Insertable<PageRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'id': serializer.toJson<String>(id),
-      'blockId': serializer.toJson<String?>(blockId),
-      'title': serializer.toJson<String>(title),
-      'createdAt': serializer.toJson<DateTime>(createdAt),
-      'updatedAt': serializer.toJson<DateTime>(updatedAt),
-      'isEncrypted': serializer.toJson<bool>(isEncrypted),
-      'passwordHash': serializer.toJson<String?>(passwordHash),
+      'titulo': serializer.toJson<String>(titulo),
+      'criadoEm': serializer.toJson<DateTime>(criadoEm),
+      'atualizadoEm': serializer.toJson<DateTime>(atualizadoEm),
+      'protegidoPorSenha': serializer.toJson<bool>(protegidoPorSenha),
+      'senhaHash': serializer.toJson<String?>(senhaHash),
       'salt': serializer.toJson<String?>(salt),
-      'draftContent': serializer.toJson<String>(draftContent),
+      'rascunho': serializer.toJson<String>(rascunho),
     };
   }
 
-  PageRow copyWith({
+  ConversationRow copyWith({
     String? id,
-    Value<String?> blockId = const Value.absent(),
-    String? title,
-    DateTime? createdAt,
-    DateTime? updatedAt,
-    bool? isEncrypted,
-    Value<String?> passwordHash = const Value.absent(),
+    String? titulo,
+    DateTime? criadoEm,
+    DateTime? atualizadoEm,
+    bool? protegidoPorSenha,
+    Value<String?> senhaHash = const Value.absent(),
     Value<String?> salt = const Value.absent(),
-    String? draftContent,
-  }) => PageRow(
+    String? rascunho,
+  }) => ConversationRow(
     id: id ?? this.id,
-    blockId: blockId.present ? blockId.value : this.blockId,
-    title: title ?? this.title,
-    createdAt: createdAt ?? this.createdAt,
-    updatedAt: updatedAt ?? this.updatedAt,
-    isEncrypted: isEncrypted ?? this.isEncrypted,
-    passwordHash: passwordHash.present ? passwordHash.value : this.passwordHash,
+    titulo: titulo ?? this.titulo,
+    criadoEm: criadoEm ?? this.criadoEm,
+    atualizadoEm: atualizadoEm ?? this.atualizadoEm,
+    protegidoPorSenha: protegidoPorSenha ?? this.protegidoPorSenha,
+    senhaHash: senhaHash.present ? senhaHash.value : this.senhaHash,
     salt: salt.present ? salt.value : this.salt,
-    draftContent: draftContent ?? this.draftContent,
+    rascunho: rascunho ?? this.rascunho,
   );
-  PageRow copyWithCompanion(PagesCompanion data) {
-    return PageRow(
+  ConversationRow copyWithCompanion(ConversationsCompanion data) {
+    return ConversationRow(
       id: data.id.present ? data.id.value : this.id,
-      blockId: data.blockId.present ? data.blockId.value : this.blockId,
-      title: data.title.present ? data.title.value : this.title,
-      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
-      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
-      isEncrypted: data.isEncrypted.present
-          ? data.isEncrypted.value
-          : this.isEncrypted,
-      passwordHash: data.passwordHash.present
-          ? data.passwordHash.value
-          : this.passwordHash,
+      titulo: data.titulo.present ? data.titulo.value : this.titulo,
+      criadoEm: data.criadoEm.present ? data.criadoEm.value : this.criadoEm,
+      atualizadoEm: data.atualizadoEm.present
+          ? data.atualizadoEm.value
+          : this.atualizadoEm,
+      protegidoPorSenha: data.protegidoPorSenha.present
+          ? data.protegidoPorSenha.value
+          : this.protegidoPorSenha,
+      senhaHash: data.senhaHash.present ? data.senhaHash.value : this.senhaHash,
       salt: data.salt.present ? data.salt.value : this.salt,
-      draftContent: data.draftContent.present
-          ? data.draftContent.value
-          : this.draftContent,
+      rascunho: data.rascunho.present ? data.rascunho.value : this.rascunho,
     );
   }
 
   @override
   String toString() {
-    return (StringBuffer('PageRow(')
+    return (StringBuffer('ConversationRow(')
           ..write('id: $id, ')
-          ..write('blockId: $blockId, ')
-          ..write('title: $title, ')
-          ..write('createdAt: $createdAt, ')
-          ..write('updatedAt: $updatedAt, ')
-          ..write('isEncrypted: $isEncrypted, ')
-          ..write('passwordHash: $passwordHash, ')
+          ..write('titulo: $titulo, ')
+          ..write('criadoEm: $criadoEm, ')
+          ..write('atualizadoEm: $atualizadoEm, ')
+          ..write('protegidoPorSenha: $protegidoPorSenha, ')
+          ..write('senhaHash: $senhaHash, ')
           ..write('salt: $salt, ')
-          ..write('draftContent: $draftContent')
+          ..write('rascunho: $rascunho')
           ..write(')'))
         .toString();
   }
@@ -824,116 +370,107 @@ class PageRow extends DataClass implements Insertable<PageRow> {
   @override
   int get hashCode => Object.hash(
     id,
-    blockId,
-    title,
-    createdAt,
-    updatedAt,
-    isEncrypted,
-    passwordHash,
+    titulo,
+    criadoEm,
+    atualizadoEm,
+    protegidoPorSenha,
+    senhaHash,
     salt,
-    draftContent,
+    rascunho,
   );
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      (other is PageRow &&
+      (other is ConversationRow &&
           other.id == this.id &&
-          other.blockId == this.blockId &&
-          other.title == this.title &&
-          other.createdAt == this.createdAt &&
-          other.updatedAt == this.updatedAt &&
-          other.isEncrypted == this.isEncrypted &&
-          other.passwordHash == this.passwordHash &&
+          other.titulo == this.titulo &&
+          other.criadoEm == this.criadoEm &&
+          other.atualizadoEm == this.atualizadoEm &&
+          other.protegidoPorSenha == this.protegidoPorSenha &&
+          other.senhaHash == this.senhaHash &&
           other.salt == this.salt &&
-          other.draftContent == this.draftContent);
+          other.rascunho == this.rascunho);
 }
 
-class PagesCompanion extends UpdateCompanion<PageRow> {
+class ConversationsCompanion extends UpdateCompanion<ConversationRow> {
   final Value<String> id;
-  final Value<String?> blockId;
-  final Value<String> title;
-  final Value<DateTime> createdAt;
-  final Value<DateTime> updatedAt;
-  final Value<bool> isEncrypted;
-  final Value<String?> passwordHash;
+  final Value<String> titulo;
+  final Value<DateTime> criadoEm;
+  final Value<DateTime> atualizadoEm;
+  final Value<bool> protegidoPorSenha;
+  final Value<String?> senhaHash;
   final Value<String?> salt;
-  final Value<String> draftContent;
+  final Value<String> rascunho;
   final Value<int> rowid;
-  const PagesCompanion({
+  const ConversationsCompanion({
     this.id = const Value.absent(),
-    this.blockId = const Value.absent(),
-    this.title = const Value.absent(),
-    this.createdAt = const Value.absent(),
-    this.updatedAt = const Value.absent(),
-    this.isEncrypted = const Value.absent(),
-    this.passwordHash = const Value.absent(),
+    this.titulo = const Value.absent(),
+    this.criadoEm = const Value.absent(),
+    this.atualizadoEm = const Value.absent(),
+    this.protegidoPorSenha = const Value.absent(),
+    this.senhaHash = const Value.absent(),
     this.salt = const Value.absent(),
-    this.draftContent = const Value.absent(),
+    this.rascunho = const Value.absent(),
     this.rowid = const Value.absent(),
   });
-  PagesCompanion.insert({
+  ConversationsCompanion.insert({
     required String id,
-    this.blockId = const Value.absent(),
-    required String title,
-    required DateTime createdAt,
-    required DateTime updatedAt,
-    this.isEncrypted = const Value.absent(),
-    this.passwordHash = const Value.absent(),
+    required String titulo,
+    required DateTime criadoEm,
+    required DateTime atualizadoEm,
+    this.protegidoPorSenha = const Value.absent(),
+    this.senhaHash = const Value.absent(),
     this.salt = const Value.absent(),
-    this.draftContent = const Value.absent(),
+    this.rascunho = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
-       title = Value(title),
-       createdAt = Value(createdAt),
-       updatedAt = Value(updatedAt);
-  static Insertable<PageRow> custom({
+       titulo = Value(titulo),
+       criadoEm = Value(criadoEm),
+       atualizadoEm = Value(atualizadoEm);
+  static Insertable<ConversationRow> custom({
     Expression<String>? id,
-    Expression<String>? blockId,
-    Expression<String>? title,
-    Expression<DateTime>? createdAt,
-    Expression<DateTime>? updatedAt,
-    Expression<bool>? isEncrypted,
-    Expression<String>? passwordHash,
+    Expression<String>? titulo,
+    Expression<DateTime>? criadoEm,
+    Expression<DateTime>? atualizadoEm,
+    Expression<bool>? protegidoPorSenha,
+    Expression<String>? senhaHash,
     Expression<String>? salt,
-    Expression<String>? draftContent,
+    Expression<String>? rascunho,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
-      if (blockId != null) 'block_id': blockId,
-      if (title != null) 'title': title,
-      if (createdAt != null) 'created_at': createdAt,
-      if (updatedAt != null) 'updated_at': updatedAt,
-      if (isEncrypted != null) 'is_encrypted': isEncrypted,
-      if (passwordHash != null) 'password_hash': passwordHash,
+      if (titulo != null) 'titulo': titulo,
+      if (criadoEm != null) 'criado_em': criadoEm,
+      if (atualizadoEm != null) 'atualizado_em': atualizadoEm,
+      if (protegidoPorSenha != null) 'protegido_por_senha': protegidoPorSenha,
+      if (senhaHash != null) 'senha_hash': senhaHash,
       if (salt != null) 'salt': salt,
-      if (draftContent != null) 'draft_content': draftContent,
+      if (rascunho != null) 'rascunho': rascunho,
       if (rowid != null) 'rowid': rowid,
     });
   }
 
-  PagesCompanion copyWith({
+  ConversationsCompanion copyWith({
     Value<String>? id,
-    Value<String?>? blockId,
-    Value<String>? title,
-    Value<DateTime>? createdAt,
-    Value<DateTime>? updatedAt,
-    Value<bool>? isEncrypted,
-    Value<String?>? passwordHash,
+    Value<String>? titulo,
+    Value<DateTime>? criadoEm,
+    Value<DateTime>? atualizadoEm,
+    Value<bool>? protegidoPorSenha,
+    Value<String?>? senhaHash,
     Value<String?>? salt,
-    Value<String>? draftContent,
+    Value<String>? rascunho,
     Value<int>? rowid,
   }) {
-    return PagesCompanion(
+    return ConversationsCompanion(
       id: id ?? this.id,
-      blockId: blockId ?? this.blockId,
-      title: title ?? this.title,
-      createdAt: createdAt ?? this.createdAt,
-      updatedAt: updatedAt ?? this.updatedAt,
-      isEncrypted: isEncrypted ?? this.isEncrypted,
-      passwordHash: passwordHash ?? this.passwordHash,
+      titulo: titulo ?? this.titulo,
+      criadoEm: criadoEm ?? this.criadoEm,
+      atualizadoEm: atualizadoEm ?? this.atualizadoEm,
+      protegidoPorSenha: protegidoPorSenha ?? this.protegidoPorSenha,
+      senhaHash: senhaHash ?? this.senhaHash,
       salt: salt ?? this.salt,
-      draftContent: draftContent ?? this.draftContent,
+      rascunho: rascunho ?? this.rascunho,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -944,29 +481,26 @@ class PagesCompanion extends UpdateCompanion<PageRow> {
     if (id.present) {
       map['id'] = Variable<String>(id.value);
     }
-    if (blockId.present) {
-      map['block_id'] = Variable<String>(blockId.value);
+    if (titulo.present) {
+      map['titulo'] = Variable<String>(titulo.value);
     }
-    if (title.present) {
-      map['title'] = Variable<String>(title.value);
+    if (criadoEm.present) {
+      map['criado_em'] = Variable<DateTime>(criadoEm.value);
     }
-    if (createdAt.present) {
-      map['created_at'] = Variable<DateTime>(createdAt.value);
+    if (atualizadoEm.present) {
+      map['atualizado_em'] = Variable<DateTime>(atualizadoEm.value);
     }
-    if (updatedAt.present) {
-      map['updated_at'] = Variable<DateTime>(updatedAt.value);
+    if (protegidoPorSenha.present) {
+      map['protegido_por_senha'] = Variable<bool>(protegidoPorSenha.value);
     }
-    if (isEncrypted.present) {
-      map['is_encrypted'] = Variable<bool>(isEncrypted.value);
-    }
-    if (passwordHash.present) {
-      map['password_hash'] = Variable<String>(passwordHash.value);
+    if (senhaHash.present) {
+      map['senha_hash'] = Variable<String>(senhaHash.value);
     }
     if (salt.present) {
       map['salt'] = Variable<String>(salt.value);
     }
-    if (draftContent.present) {
-      map['draft_content'] = Variable<String>(draftContent.value);
+    if (rascunho.present) {
+      map['rascunho'] = Variable<String>(rascunho.value);
     }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
@@ -976,27 +510,26 @@ class PagesCompanion extends UpdateCompanion<PageRow> {
 
   @override
   String toString() {
-    return (StringBuffer('PagesCompanion(')
+    return (StringBuffer('ConversationsCompanion(')
           ..write('id: $id, ')
-          ..write('blockId: $blockId, ')
-          ..write('title: $title, ')
-          ..write('createdAt: $createdAt, ')
-          ..write('updatedAt: $updatedAt, ')
-          ..write('isEncrypted: $isEncrypted, ')
-          ..write('passwordHash: $passwordHash, ')
+          ..write('titulo: $titulo, ')
+          ..write('criadoEm: $criadoEm, ')
+          ..write('atualizadoEm: $atualizadoEm, ')
+          ..write('protegidoPorSenha: $protegidoPorSenha, ')
+          ..write('senhaHash: $senhaHash, ')
           ..write('salt: $salt, ')
-          ..write('draftContent: $draftContent, ')
+          ..write('rascunho: $rascunho, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
   }
 }
 
-class $LinesTable extends Lines with TableInfo<$LinesTable, LineRow> {
+class $TagsTable extends Tags with TableInfo<$TagsTable, TagRow> {
   @override
   final GeneratedDatabase attachedDatabase;
   final String? _alias;
-  $LinesTable(this.attachedDatabase, [this._alias]);
+  $TagsTable(this.attachedDatabase, [this._alias]);
   static const VerificationMeta _idMeta = const VerificationMeta('id');
   @override
   late final GeneratedColumn<String> id = GeneratedColumn<String>(
@@ -1006,16 +539,275 @@ class $LinesTable extends Lines with TableInfo<$LinesTable, LineRow> {
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
-  static const VerificationMeta _pageIdMeta = const VerificationMeta('pageId');
+  static const VerificationMeta _nomeMeta = const VerificationMeta('nome');
   @override
-  late final GeneratedColumn<String> pageId = GeneratedColumn<String>(
-    'page_id',
+  late final GeneratedColumn<String> nome = GeneratedColumn<String>(
+    'nome',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _corMeta = const VerificationMeta('cor');
+  @override
+  late final GeneratedColumn<String> cor = GeneratedColumn<String>(
+    'cor',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [id, nome, cor];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'tags';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<TagRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('nome')) {
+      context.handle(
+        _nomeMeta,
+        nome.isAcceptableOrUnknown(data['nome']!, _nomeMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_nomeMeta);
+    }
+    if (data.containsKey('cor')) {
+      context.handle(
+        _corMeta,
+        cor.isAcceptableOrUnknown(data['cor']!, _corMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_corMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  TagRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return TagRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      nome: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}nome'],
+      )!,
+      cor: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}cor'],
+      )!,
+    );
+  }
+
+  @override
+  $TagsTable createAlias(String alias) {
+    return $TagsTable(attachedDatabase, alias);
+  }
+}
+
+class TagRow extends DataClass implements Insertable<TagRow> {
+  final String id;
+  final String nome;
+  final String cor;
+  const TagRow({required this.id, required this.nome, required this.cor});
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['nome'] = Variable<String>(nome);
+    map['cor'] = Variable<String>(cor);
+    return map;
+  }
+
+  TagsCompanion toCompanion(bool nullToAbsent) {
+    return TagsCompanion(id: Value(id), nome: Value(nome), cor: Value(cor));
+  }
+
+  factory TagRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return TagRow(
+      id: serializer.fromJson<String>(json['id']),
+      nome: serializer.fromJson<String>(json['nome']),
+      cor: serializer.fromJson<String>(json['cor']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'nome': serializer.toJson<String>(nome),
+      'cor': serializer.toJson<String>(cor),
+    };
+  }
+
+  TagRow copyWith({String? id, String? nome, String? cor}) =>
+      TagRow(id: id ?? this.id, nome: nome ?? this.nome, cor: cor ?? this.cor);
+  TagRow copyWithCompanion(TagsCompanion data) {
+    return TagRow(
+      id: data.id.present ? data.id.value : this.id,
+      nome: data.nome.present ? data.nome.value : this.nome,
+      cor: data.cor.present ? data.cor.value : this.cor,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('TagRow(')
+          ..write('id: $id, ')
+          ..write('nome: $nome, ')
+          ..write('cor: $cor')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, nome, cor);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is TagRow &&
+          other.id == this.id &&
+          other.nome == this.nome &&
+          other.cor == this.cor);
+}
+
+class TagsCompanion extends UpdateCompanion<TagRow> {
+  final Value<String> id;
+  final Value<String> nome;
+  final Value<String> cor;
+  final Value<int> rowid;
+  const TagsCompanion({
+    this.id = const Value.absent(),
+    this.nome = const Value.absent(),
+    this.cor = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  TagsCompanion.insert({
+    required String id,
+    required String nome,
+    required String cor,
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       nome = Value(nome),
+       cor = Value(cor);
+  static Insertable<TagRow> custom({
+    Expression<String>? id,
+    Expression<String>? nome,
+    Expression<String>? cor,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (nome != null) 'nome': nome,
+      if (cor != null) 'cor': cor,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  TagsCompanion copyWith({
+    Value<String>? id,
+    Value<String>? nome,
+    Value<String>? cor,
+    Value<int>? rowid,
+  }) {
+    return TagsCompanion(
+      id: id ?? this.id,
+      nome: nome ?? this.nome,
+      cor: cor ?? this.cor,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (nome.present) {
+      map['nome'] = Variable<String>(nome.value);
+    }
+    if (cor.present) {
+      map['cor'] = Variable<String>(cor.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('TagsCompanion(')
+          ..write('id: $id, ')
+          ..write('nome: $nome, ')
+          ..write('cor: $cor, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $MessagesTable extends Messages
+    with TableInfo<$MessagesTable, MessageRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MessagesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _conversationIdMeta = const VerificationMeta(
+    'conversationId',
+  );
+  @override
+  late final GeneratedColumn<String> conversationId = GeneratedColumn<String>(
+    'conversation_id',
     aliasedName,
     false,
     type: DriftSqlType.string,
     requiredDuringInsert: true,
     defaultConstraints: GeneratedColumn.constraintIsAlways(
-      'REFERENCES pages (id)',
+      'REFERENCES conversations (id)',
+    ),
+  );
+  static const VerificationMeta _tagIdMeta = const VerificationMeta('tagId');
+  @override
+  late final GeneratedColumn<String> tagId = GeneratedColumn<String>(
+    'tag_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES tags (id) ON DELETE SET NULL',
     ),
   );
   static const VerificationMeta _positionMeta = const VerificationMeta(
@@ -1029,57 +821,129 @@ class $LinesTable extends Lines with TableInfo<$LinesTable, LineRow> {
     type: DriftSqlType.int,
     requiredDuringInsert: true,
   );
-  static const VerificationMeta _contentMeta = const VerificationMeta(
-    'content',
+  @override
+  late final GeneratedColumnWithTypeConverter<MessageType, int> tipo =
+      GeneratedColumn<int>(
+        'tipo',
+        aliasedName,
+        false,
+        type: DriftSqlType.int,
+        requiredDuringInsert: false,
+        defaultValue: const Constant(0),
+      ).withConverter<MessageType>($MessagesTable.$convertertipo);
+  static const VerificationMeta _conteudoTextoMeta = const VerificationMeta(
+    'conteudoTexto',
   );
   @override
-  late final GeneratedColumn<String> content = GeneratedColumn<String>(
-    'content',
+  late final GeneratedColumn<String> conteudoTexto = GeneratedColumn<String>(
+    'conteudo_texto',
     aliasedName,
-    false,
+    true,
     type: DriftSqlType.string,
-    requiredDuringInsert: true,
+    requiredDuringInsert: false,
   );
-  static const VerificationMeta _dateMeta = const VerificationMeta('date');
+  static const VerificationMeta _arquivoPathMeta = const VerificationMeta(
+    'arquivoPath',
+  );
   @override
-  late final GeneratedColumn<DateTime> date = GeneratedColumn<DateTime>(
-    'date',
+  late final GeneratedColumn<String> arquivoPath = GeneratedColumn<String>(
+    'arquivo_path',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _arquivoNomeOriginalMeta =
+      const VerificationMeta('arquivoNomeOriginal');
+  @override
+  late final GeneratedColumn<String> arquivoNomeOriginal =
+      GeneratedColumn<String>(
+        'arquivo_nome_original',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
+  static const VerificationMeta _arquivoNomeExibicaoMeta =
+      const VerificationMeta('arquivoNomeExibicao');
+  @override
+  late final GeneratedColumn<String> arquivoNomeExibicao =
+      GeneratedColumn<String>(
+        'arquivo_nome_exibicao',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
+  static const VerificationMeta _arquivoMimeTypeMeta = const VerificationMeta(
+    'arquivoMimeType',
+  );
+  @override
+  late final GeneratedColumn<String> arquivoMimeType = GeneratedColumn<String>(
+    'arquivo_mime_type',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _arquivoTamanhoBytesMeta =
+      const VerificationMeta('arquivoTamanhoBytes');
+  @override
+  late final GeneratedColumn<int> arquivoTamanhoBytes = GeneratedColumn<int>(
+    'arquivo_tamanho_bytes',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _dataMeta = const VerificationMeta('data');
+  @override
+  late final GeneratedColumn<DateTime> data = GeneratedColumn<DateTime>(
+    'data',
     aliasedName,
     false,
     type: DriftSqlType.dateTime,
     requiredDuringInsert: true,
   );
-  static const VerificationMeta _isDateManuallyEditedMeta =
-      const VerificationMeta('isDateManuallyEdited');
+  static const VerificationMeta _dataEditadaManualmenteMeta =
+      const VerificationMeta('dataEditadaManualmente');
   @override
-  late final GeneratedColumn<bool> isDateManuallyEdited = GeneratedColumn<bool>(
-    'is_date_manually_edited',
-    aliasedName,
-    false,
-    type: DriftSqlType.bool,
-    requiredDuringInsert: false,
-    defaultConstraints: GeneratedColumn.constraintIsAlways(
-      'CHECK ("is_date_manually_edited" IN (0, 1))',
-    ),
-    defaultValue: const Constant(false),
-  );
+  late final GeneratedColumn<bool> dataEditadaManualmente =
+      GeneratedColumn<bool>(
+        'data_editada_manualmente',
+        aliasedName,
+        false,
+        type: DriftSqlType.bool,
+        requiredDuringInsert: false,
+        defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'CHECK ("data_editada_manualmente" IN (0, 1))',
+        ),
+        defaultValue: const Constant(false),
+      );
   @override
   List<GeneratedColumn> get $columns => [
     id,
-    pageId,
+    conversationId,
+    tagId,
     position,
-    content,
-    date,
-    isDateManuallyEdited,
+    tipo,
+    conteudoTexto,
+    arquivoPath,
+    arquivoNomeOriginal,
+    arquivoNomeExibicao,
+    arquivoMimeType,
+    arquivoTamanhoBytes,
+    data,
+    dataEditadaManualmente,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
   String get actualTableName => $name;
-  static const String $name = 'lines';
+  static const String $name = 'messages';
   @override
   VerificationContext validateIntegrity(
-    Insertable<LineRow> instance, {
+    Insertable<MessageRow> instance, {
     bool isInserting = false,
   }) {
     final context = VerificationContext();
@@ -1089,13 +953,22 @@ class $LinesTable extends Lines with TableInfo<$LinesTable, LineRow> {
     } else if (isInserting) {
       context.missing(_idMeta);
     }
-    if (data.containsKey('page_id')) {
+    if (data.containsKey('conversation_id')) {
       context.handle(
-        _pageIdMeta,
-        pageId.isAcceptableOrUnknown(data['page_id']!, _pageIdMeta),
+        _conversationIdMeta,
+        conversationId.isAcceptableOrUnknown(
+          data['conversation_id']!,
+          _conversationIdMeta,
+        ),
       );
     } else if (isInserting) {
-      context.missing(_pageIdMeta);
+      context.missing(_conversationIdMeta);
+    }
+    if (data.containsKey('tag_id')) {
+      context.handle(
+        _tagIdMeta,
+        tagId.isAcceptableOrUnknown(data['tag_id']!, _tagIdMeta),
+      );
     }
     if (data.containsKey('position')) {
       context.handle(
@@ -1105,28 +978,74 @@ class $LinesTable extends Lines with TableInfo<$LinesTable, LineRow> {
     } else if (isInserting) {
       context.missing(_positionMeta);
     }
-    if (data.containsKey('content')) {
+    if (data.containsKey('conteudo_texto')) {
       context.handle(
-        _contentMeta,
-        content.isAcceptableOrUnknown(data['content']!, _contentMeta),
+        _conteudoTextoMeta,
+        conteudoTexto.isAcceptableOrUnknown(
+          data['conteudo_texto']!,
+          _conteudoTextoMeta,
+        ),
+      );
+    }
+    if (data.containsKey('arquivo_path')) {
+      context.handle(
+        _arquivoPathMeta,
+        arquivoPath.isAcceptableOrUnknown(
+          data['arquivo_path']!,
+          _arquivoPathMeta,
+        ),
+      );
+    }
+    if (data.containsKey('arquivo_nome_original')) {
+      context.handle(
+        _arquivoNomeOriginalMeta,
+        arquivoNomeOriginal.isAcceptableOrUnknown(
+          data['arquivo_nome_original']!,
+          _arquivoNomeOriginalMeta,
+        ),
+      );
+    }
+    if (data.containsKey('arquivo_nome_exibicao')) {
+      context.handle(
+        _arquivoNomeExibicaoMeta,
+        arquivoNomeExibicao.isAcceptableOrUnknown(
+          data['arquivo_nome_exibicao']!,
+          _arquivoNomeExibicaoMeta,
+        ),
+      );
+    }
+    if (data.containsKey('arquivo_mime_type')) {
+      context.handle(
+        _arquivoMimeTypeMeta,
+        arquivoMimeType.isAcceptableOrUnknown(
+          data['arquivo_mime_type']!,
+          _arquivoMimeTypeMeta,
+        ),
+      );
+    }
+    if (data.containsKey('arquivo_tamanho_bytes')) {
+      context.handle(
+        _arquivoTamanhoBytesMeta,
+        arquivoTamanhoBytes.isAcceptableOrUnknown(
+          data['arquivo_tamanho_bytes']!,
+          _arquivoTamanhoBytesMeta,
+        ),
+      );
+    }
+    if (data.containsKey('data')) {
+      context.handle(
+        _dataMeta,
+        this.data.isAcceptableOrUnknown(data['data']!, _dataMeta),
       );
     } else if (isInserting) {
-      context.missing(_contentMeta);
+      context.missing(_dataMeta);
     }
-    if (data.containsKey('date')) {
+    if (data.containsKey('data_editada_manualmente')) {
       context.handle(
-        _dateMeta,
-        date.isAcceptableOrUnknown(data['date']!, _dateMeta),
-      );
-    } else if (isInserting) {
-      context.missing(_dateMeta);
-    }
-    if (data.containsKey('is_date_manually_edited')) {
-      context.handle(
-        _isDateManuallyEditedMeta,
-        isDateManuallyEdited.isAcceptableOrUnknown(
-          data['is_date_manually_edited']!,
-          _isDateManuallyEditedMeta,
+        _dataEditadaManualmenteMeta,
+        dataEditadaManualmente.isAcceptableOrUnknown(
+          data['data_editada_manualmente']!,
+          _dataEditadaManualmenteMeta,
         ),
       );
     }
@@ -1136,93 +1055,205 @@ class $LinesTable extends Lines with TableInfo<$LinesTable, LineRow> {
   @override
   Set<GeneratedColumn> get $primaryKey => {id};
   @override
-  LineRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+  MessageRow map(Map<String, dynamic> data, {String? tablePrefix}) {
     final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
-    return LineRow(
+    return MessageRow(
       id: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}id'],
       )!,
-      pageId: attachedDatabase.typeMapping.read(
+      conversationId: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
-        data['${effectivePrefix}page_id'],
+        data['${effectivePrefix}conversation_id'],
       )!,
+      tagId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}tag_id'],
+      ),
       position: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}position'],
       )!,
-      content: attachedDatabase.typeMapping.read(
+      tipo: $MessagesTable.$convertertipo.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.int,
+          data['${effectivePrefix}tipo'],
+        )!,
+      ),
+      conteudoTexto: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
-        data['${effectivePrefix}content'],
-      )!,
-      date: attachedDatabase.typeMapping.read(
+        data['${effectivePrefix}conteudo_texto'],
+      ),
+      arquivoPath: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}arquivo_path'],
+      ),
+      arquivoNomeOriginal: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}arquivo_nome_original'],
+      ),
+      arquivoNomeExibicao: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}arquivo_nome_exibicao'],
+      ),
+      arquivoMimeType: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}arquivo_mime_type'],
+      ),
+      arquivoTamanhoBytes: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}arquivo_tamanho_bytes'],
+      ),
+      data: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
-        data['${effectivePrefix}date'],
+        data['${effectivePrefix}data'],
       )!,
-      isDateManuallyEdited: attachedDatabase.typeMapping.read(
+      dataEditadaManualmente: attachedDatabase.typeMapping.read(
         DriftSqlType.bool,
-        data['${effectivePrefix}is_date_manually_edited'],
+        data['${effectivePrefix}data_editada_manualmente'],
       )!,
     );
   }
 
   @override
-  $LinesTable createAlias(String alias) {
-    return $LinesTable(attachedDatabase, alias);
+  $MessagesTable createAlias(String alias) {
+    return $MessagesTable(attachedDatabase, alias);
   }
+
+  static JsonTypeConverter2<MessageType, int, int> $convertertipo =
+      const EnumIndexConverter<MessageType>(MessageType.values);
 }
 
-class LineRow extends DataClass implements Insertable<LineRow> {
+class MessageRow extends DataClass implements Insertable<MessageRow> {
   final String id;
-  final String pageId;
+  final String conversationId;
+
+  /// RF04 — no máximo uma Tag por Mensagem (nullable = sem tag).
+  final String? tagId;
   final int position;
-  final String content;
-  final DateTime date;
-  final bool isDateManuallyEdited;
-  const LineRow({
+  final MessageType tipo;
+  final String? conteudoTexto;
+  final String? arquivoPath;
+  final String? arquivoNomeOriginal;
+  final String? arquivoNomeExibicao;
+  final String? arquivoMimeType;
+  final int? arquivoTamanhoBytes;
+
+  /// RF03 — apenas o dia, sem hora; atribuída no momento do envio e imutável
+  /// por edição de conteúdo (só muda via exclusão+reenvio ou sobrescrita
+  /// manual, ver `dataEditadaManualmente`).
+  final DateTime data;
+  final bool dataEditadaManualmente;
+  const MessageRow({
     required this.id,
-    required this.pageId,
+    required this.conversationId,
+    this.tagId,
     required this.position,
-    required this.content,
-    required this.date,
-    required this.isDateManuallyEdited,
+    required this.tipo,
+    this.conteudoTexto,
+    this.arquivoPath,
+    this.arquivoNomeOriginal,
+    this.arquivoNomeExibicao,
+    this.arquivoMimeType,
+    this.arquivoTamanhoBytes,
+    required this.data,
+    required this.dataEditadaManualmente,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['id'] = Variable<String>(id);
-    map['page_id'] = Variable<String>(pageId);
+    map['conversation_id'] = Variable<String>(conversationId);
+    if (!nullToAbsent || tagId != null) {
+      map['tag_id'] = Variable<String>(tagId);
+    }
     map['position'] = Variable<int>(position);
-    map['content'] = Variable<String>(content);
-    map['date'] = Variable<DateTime>(date);
-    map['is_date_manually_edited'] = Variable<bool>(isDateManuallyEdited);
+    {
+      map['tipo'] = Variable<int>($MessagesTable.$convertertipo.toSql(tipo));
+    }
+    if (!nullToAbsent || conteudoTexto != null) {
+      map['conteudo_texto'] = Variable<String>(conteudoTexto);
+    }
+    if (!nullToAbsent || arquivoPath != null) {
+      map['arquivo_path'] = Variable<String>(arquivoPath);
+    }
+    if (!nullToAbsent || arquivoNomeOriginal != null) {
+      map['arquivo_nome_original'] = Variable<String>(arquivoNomeOriginal);
+    }
+    if (!nullToAbsent || arquivoNomeExibicao != null) {
+      map['arquivo_nome_exibicao'] = Variable<String>(arquivoNomeExibicao);
+    }
+    if (!nullToAbsent || arquivoMimeType != null) {
+      map['arquivo_mime_type'] = Variable<String>(arquivoMimeType);
+    }
+    if (!nullToAbsent || arquivoTamanhoBytes != null) {
+      map['arquivo_tamanho_bytes'] = Variable<int>(arquivoTamanhoBytes);
+    }
+    map['data'] = Variable<DateTime>(data);
+    map['data_editada_manualmente'] = Variable<bool>(dataEditadaManualmente);
     return map;
   }
 
-  LinesCompanion toCompanion(bool nullToAbsent) {
-    return LinesCompanion(
+  MessagesCompanion toCompanion(bool nullToAbsent) {
+    return MessagesCompanion(
       id: Value(id),
-      pageId: Value(pageId),
+      conversationId: Value(conversationId),
+      tagId: tagId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(tagId),
       position: Value(position),
-      content: Value(content),
-      date: Value(date),
-      isDateManuallyEdited: Value(isDateManuallyEdited),
+      tipo: Value(tipo),
+      conteudoTexto: conteudoTexto == null && nullToAbsent
+          ? const Value.absent()
+          : Value(conteudoTexto),
+      arquivoPath: arquivoPath == null && nullToAbsent
+          ? const Value.absent()
+          : Value(arquivoPath),
+      arquivoNomeOriginal: arquivoNomeOriginal == null && nullToAbsent
+          ? const Value.absent()
+          : Value(arquivoNomeOriginal),
+      arquivoNomeExibicao: arquivoNomeExibicao == null && nullToAbsent
+          ? const Value.absent()
+          : Value(arquivoNomeExibicao),
+      arquivoMimeType: arquivoMimeType == null && nullToAbsent
+          ? const Value.absent()
+          : Value(arquivoMimeType),
+      arquivoTamanhoBytes: arquivoTamanhoBytes == null && nullToAbsent
+          ? const Value.absent()
+          : Value(arquivoTamanhoBytes),
+      data: Value(data),
+      dataEditadaManualmente: Value(dataEditadaManualmente),
     );
   }
 
-  factory LineRow.fromJson(
+  factory MessageRow.fromJson(
     Map<String, dynamic> json, {
     ValueSerializer? serializer,
   }) {
     serializer ??= driftRuntimeOptions.defaultSerializer;
-    return LineRow(
+    return MessageRow(
       id: serializer.fromJson<String>(json['id']),
-      pageId: serializer.fromJson<String>(json['pageId']),
+      conversationId: serializer.fromJson<String>(json['conversationId']),
+      tagId: serializer.fromJson<String?>(json['tagId']),
       position: serializer.fromJson<int>(json['position']),
-      content: serializer.fromJson<String>(json['content']),
-      date: serializer.fromJson<DateTime>(json['date']),
-      isDateManuallyEdited: serializer.fromJson<bool>(
-        json['isDateManuallyEdited'],
+      tipo: $MessagesTable.$convertertipo.fromJson(
+        serializer.fromJson<int>(json['tipo']),
+      ),
+      conteudoTexto: serializer.fromJson<String?>(json['conteudoTexto']),
+      arquivoPath: serializer.fromJson<String?>(json['arquivoPath']),
+      arquivoNomeOriginal: serializer.fromJson<String?>(
+        json['arquivoNomeOriginal'],
+      ),
+      arquivoNomeExibicao: serializer.fromJson<String?>(
+        json['arquivoNomeExibicao'],
+      ),
+      arquivoMimeType: serializer.fromJson<String?>(json['arquivoMimeType']),
+      arquivoTamanhoBytes: serializer.fromJson<int?>(
+        json['arquivoTamanhoBytes'],
+      ),
+      data: serializer.fromJson<DateTime>(json['data']),
+      dataEditadaManualmente: serializer.fromJson<bool>(
+        json['dataEditadaManualmente'],
       ),
     );
   }
@@ -1231,137 +1262,271 @@ class LineRow extends DataClass implements Insertable<LineRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'id': serializer.toJson<String>(id),
-      'pageId': serializer.toJson<String>(pageId),
+      'conversationId': serializer.toJson<String>(conversationId),
+      'tagId': serializer.toJson<String?>(tagId),
       'position': serializer.toJson<int>(position),
-      'content': serializer.toJson<String>(content),
-      'date': serializer.toJson<DateTime>(date),
-      'isDateManuallyEdited': serializer.toJson<bool>(isDateManuallyEdited),
+      'tipo': serializer.toJson<int>(
+        $MessagesTable.$convertertipo.toJson(tipo),
+      ),
+      'conteudoTexto': serializer.toJson<String?>(conteudoTexto),
+      'arquivoPath': serializer.toJson<String?>(arquivoPath),
+      'arquivoNomeOriginal': serializer.toJson<String?>(arquivoNomeOriginal),
+      'arquivoNomeExibicao': serializer.toJson<String?>(arquivoNomeExibicao),
+      'arquivoMimeType': serializer.toJson<String?>(arquivoMimeType),
+      'arquivoTamanhoBytes': serializer.toJson<int?>(arquivoTamanhoBytes),
+      'data': serializer.toJson<DateTime>(data),
+      'dataEditadaManualmente': serializer.toJson<bool>(dataEditadaManualmente),
     };
   }
 
-  LineRow copyWith({
+  MessageRow copyWith({
     String? id,
-    String? pageId,
+    String? conversationId,
+    Value<String?> tagId = const Value.absent(),
     int? position,
-    String? content,
-    DateTime? date,
-    bool? isDateManuallyEdited,
-  }) => LineRow(
+    MessageType? tipo,
+    Value<String?> conteudoTexto = const Value.absent(),
+    Value<String?> arquivoPath = const Value.absent(),
+    Value<String?> arquivoNomeOriginal = const Value.absent(),
+    Value<String?> arquivoNomeExibicao = const Value.absent(),
+    Value<String?> arquivoMimeType = const Value.absent(),
+    Value<int?> arquivoTamanhoBytes = const Value.absent(),
+    DateTime? data,
+    bool? dataEditadaManualmente,
+  }) => MessageRow(
     id: id ?? this.id,
-    pageId: pageId ?? this.pageId,
+    conversationId: conversationId ?? this.conversationId,
+    tagId: tagId.present ? tagId.value : this.tagId,
     position: position ?? this.position,
-    content: content ?? this.content,
-    date: date ?? this.date,
-    isDateManuallyEdited: isDateManuallyEdited ?? this.isDateManuallyEdited,
+    tipo: tipo ?? this.tipo,
+    conteudoTexto: conteudoTexto.present
+        ? conteudoTexto.value
+        : this.conteudoTexto,
+    arquivoPath: arquivoPath.present ? arquivoPath.value : this.arquivoPath,
+    arquivoNomeOriginal: arquivoNomeOriginal.present
+        ? arquivoNomeOriginal.value
+        : this.arquivoNomeOriginal,
+    arquivoNomeExibicao: arquivoNomeExibicao.present
+        ? arquivoNomeExibicao.value
+        : this.arquivoNomeExibicao,
+    arquivoMimeType: arquivoMimeType.present
+        ? arquivoMimeType.value
+        : this.arquivoMimeType,
+    arquivoTamanhoBytes: arquivoTamanhoBytes.present
+        ? arquivoTamanhoBytes.value
+        : this.arquivoTamanhoBytes,
+    data: data ?? this.data,
+    dataEditadaManualmente:
+        dataEditadaManualmente ?? this.dataEditadaManualmente,
   );
-  LineRow copyWithCompanion(LinesCompanion data) {
-    return LineRow(
+  MessageRow copyWithCompanion(MessagesCompanion data) {
+    return MessageRow(
       id: data.id.present ? data.id.value : this.id,
-      pageId: data.pageId.present ? data.pageId.value : this.pageId,
+      conversationId: data.conversationId.present
+          ? data.conversationId.value
+          : this.conversationId,
+      tagId: data.tagId.present ? data.tagId.value : this.tagId,
       position: data.position.present ? data.position.value : this.position,
-      content: data.content.present ? data.content.value : this.content,
-      date: data.date.present ? data.date.value : this.date,
-      isDateManuallyEdited: data.isDateManuallyEdited.present
-          ? data.isDateManuallyEdited.value
-          : this.isDateManuallyEdited,
+      tipo: data.tipo.present ? data.tipo.value : this.tipo,
+      conteudoTexto: data.conteudoTexto.present
+          ? data.conteudoTexto.value
+          : this.conteudoTexto,
+      arquivoPath: data.arquivoPath.present
+          ? data.arquivoPath.value
+          : this.arquivoPath,
+      arquivoNomeOriginal: data.arquivoNomeOriginal.present
+          ? data.arquivoNomeOriginal.value
+          : this.arquivoNomeOriginal,
+      arquivoNomeExibicao: data.arquivoNomeExibicao.present
+          ? data.arquivoNomeExibicao.value
+          : this.arquivoNomeExibicao,
+      arquivoMimeType: data.arquivoMimeType.present
+          ? data.arquivoMimeType.value
+          : this.arquivoMimeType,
+      arquivoTamanhoBytes: data.arquivoTamanhoBytes.present
+          ? data.arquivoTamanhoBytes.value
+          : this.arquivoTamanhoBytes,
+      data: data.data.present ? data.data.value : this.data,
+      dataEditadaManualmente: data.dataEditadaManualmente.present
+          ? data.dataEditadaManualmente.value
+          : this.dataEditadaManualmente,
     );
   }
 
   @override
   String toString() {
-    return (StringBuffer('LineRow(')
+    return (StringBuffer('MessageRow(')
           ..write('id: $id, ')
-          ..write('pageId: $pageId, ')
+          ..write('conversationId: $conversationId, ')
+          ..write('tagId: $tagId, ')
           ..write('position: $position, ')
-          ..write('content: $content, ')
-          ..write('date: $date, ')
-          ..write('isDateManuallyEdited: $isDateManuallyEdited')
+          ..write('tipo: $tipo, ')
+          ..write('conteudoTexto: $conteudoTexto, ')
+          ..write('arquivoPath: $arquivoPath, ')
+          ..write('arquivoNomeOriginal: $arquivoNomeOriginal, ')
+          ..write('arquivoNomeExibicao: $arquivoNomeExibicao, ')
+          ..write('arquivoMimeType: $arquivoMimeType, ')
+          ..write('arquivoTamanhoBytes: $arquivoTamanhoBytes, ')
+          ..write('data: $data, ')
+          ..write('dataEditadaManualmente: $dataEditadaManualmente')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode =>
-      Object.hash(id, pageId, position, content, date, isDateManuallyEdited);
+  int get hashCode => Object.hash(
+    id,
+    conversationId,
+    tagId,
+    position,
+    tipo,
+    conteudoTexto,
+    arquivoPath,
+    arquivoNomeOriginal,
+    arquivoNomeExibicao,
+    arquivoMimeType,
+    arquivoTamanhoBytes,
+    data,
+    dataEditadaManualmente,
+  );
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      (other is LineRow &&
+      (other is MessageRow &&
           other.id == this.id &&
-          other.pageId == this.pageId &&
+          other.conversationId == this.conversationId &&
+          other.tagId == this.tagId &&
           other.position == this.position &&
-          other.content == this.content &&
-          other.date == this.date &&
-          other.isDateManuallyEdited == this.isDateManuallyEdited);
+          other.tipo == this.tipo &&
+          other.conteudoTexto == this.conteudoTexto &&
+          other.arquivoPath == this.arquivoPath &&
+          other.arquivoNomeOriginal == this.arquivoNomeOriginal &&
+          other.arquivoNomeExibicao == this.arquivoNomeExibicao &&
+          other.arquivoMimeType == this.arquivoMimeType &&
+          other.arquivoTamanhoBytes == this.arquivoTamanhoBytes &&
+          other.data == this.data &&
+          other.dataEditadaManualmente == this.dataEditadaManualmente);
 }
 
-class LinesCompanion extends UpdateCompanion<LineRow> {
+class MessagesCompanion extends UpdateCompanion<MessageRow> {
   final Value<String> id;
-  final Value<String> pageId;
+  final Value<String> conversationId;
+  final Value<String?> tagId;
   final Value<int> position;
-  final Value<String> content;
-  final Value<DateTime> date;
-  final Value<bool> isDateManuallyEdited;
+  final Value<MessageType> tipo;
+  final Value<String?> conteudoTexto;
+  final Value<String?> arquivoPath;
+  final Value<String?> arquivoNomeOriginal;
+  final Value<String?> arquivoNomeExibicao;
+  final Value<String?> arquivoMimeType;
+  final Value<int?> arquivoTamanhoBytes;
+  final Value<DateTime> data;
+  final Value<bool> dataEditadaManualmente;
   final Value<int> rowid;
-  const LinesCompanion({
+  const MessagesCompanion({
     this.id = const Value.absent(),
-    this.pageId = const Value.absent(),
+    this.conversationId = const Value.absent(),
+    this.tagId = const Value.absent(),
     this.position = const Value.absent(),
-    this.content = const Value.absent(),
-    this.date = const Value.absent(),
-    this.isDateManuallyEdited = const Value.absent(),
+    this.tipo = const Value.absent(),
+    this.conteudoTexto = const Value.absent(),
+    this.arquivoPath = const Value.absent(),
+    this.arquivoNomeOriginal = const Value.absent(),
+    this.arquivoNomeExibicao = const Value.absent(),
+    this.arquivoMimeType = const Value.absent(),
+    this.arquivoTamanhoBytes = const Value.absent(),
+    this.data = const Value.absent(),
+    this.dataEditadaManualmente = const Value.absent(),
     this.rowid = const Value.absent(),
   });
-  LinesCompanion.insert({
+  MessagesCompanion.insert({
     required String id,
-    required String pageId,
+    required String conversationId,
+    this.tagId = const Value.absent(),
     required int position,
-    required String content,
-    required DateTime date,
-    this.isDateManuallyEdited = const Value.absent(),
+    this.tipo = const Value.absent(),
+    this.conteudoTexto = const Value.absent(),
+    this.arquivoPath = const Value.absent(),
+    this.arquivoNomeOriginal = const Value.absent(),
+    this.arquivoNomeExibicao = const Value.absent(),
+    this.arquivoMimeType = const Value.absent(),
+    this.arquivoTamanhoBytes = const Value.absent(),
+    required DateTime data,
+    this.dataEditadaManualmente = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
-       pageId = Value(pageId),
+       conversationId = Value(conversationId),
        position = Value(position),
-       content = Value(content),
-       date = Value(date);
-  static Insertable<LineRow> custom({
+       data = Value(data);
+  static Insertable<MessageRow> custom({
     Expression<String>? id,
-    Expression<String>? pageId,
+    Expression<String>? conversationId,
+    Expression<String>? tagId,
     Expression<int>? position,
-    Expression<String>? content,
-    Expression<DateTime>? date,
-    Expression<bool>? isDateManuallyEdited,
+    Expression<int>? tipo,
+    Expression<String>? conteudoTexto,
+    Expression<String>? arquivoPath,
+    Expression<String>? arquivoNomeOriginal,
+    Expression<String>? arquivoNomeExibicao,
+    Expression<String>? arquivoMimeType,
+    Expression<int>? arquivoTamanhoBytes,
+    Expression<DateTime>? data,
+    Expression<bool>? dataEditadaManualmente,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
-      if (pageId != null) 'page_id': pageId,
+      if (conversationId != null) 'conversation_id': conversationId,
+      if (tagId != null) 'tag_id': tagId,
       if (position != null) 'position': position,
-      if (content != null) 'content': content,
-      if (date != null) 'date': date,
-      if (isDateManuallyEdited != null)
-        'is_date_manually_edited': isDateManuallyEdited,
+      if (tipo != null) 'tipo': tipo,
+      if (conteudoTexto != null) 'conteudo_texto': conteudoTexto,
+      if (arquivoPath != null) 'arquivo_path': arquivoPath,
+      if (arquivoNomeOriginal != null)
+        'arquivo_nome_original': arquivoNomeOriginal,
+      if (arquivoNomeExibicao != null)
+        'arquivo_nome_exibicao': arquivoNomeExibicao,
+      if (arquivoMimeType != null) 'arquivo_mime_type': arquivoMimeType,
+      if (arquivoTamanhoBytes != null)
+        'arquivo_tamanho_bytes': arquivoTamanhoBytes,
+      if (data != null) 'data': data,
+      if (dataEditadaManualmente != null)
+        'data_editada_manualmente': dataEditadaManualmente,
       if (rowid != null) 'rowid': rowid,
     });
   }
 
-  LinesCompanion copyWith({
+  MessagesCompanion copyWith({
     Value<String>? id,
-    Value<String>? pageId,
+    Value<String>? conversationId,
+    Value<String?>? tagId,
     Value<int>? position,
-    Value<String>? content,
-    Value<DateTime>? date,
-    Value<bool>? isDateManuallyEdited,
+    Value<MessageType>? tipo,
+    Value<String?>? conteudoTexto,
+    Value<String?>? arquivoPath,
+    Value<String?>? arquivoNomeOriginal,
+    Value<String?>? arquivoNomeExibicao,
+    Value<String?>? arquivoMimeType,
+    Value<int?>? arquivoTamanhoBytes,
+    Value<DateTime>? data,
+    Value<bool>? dataEditadaManualmente,
     Value<int>? rowid,
   }) {
-    return LinesCompanion(
+    return MessagesCompanion(
       id: id ?? this.id,
-      pageId: pageId ?? this.pageId,
+      conversationId: conversationId ?? this.conversationId,
+      tagId: tagId ?? this.tagId,
       position: position ?? this.position,
-      content: content ?? this.content,
-      date: date ?? this.date,
-      isDateManuallyEdited: isDateManuallyEdited ?? this.isDateManuallyEdited,
+      tipo: tipo ?? this.tipo,
+      conteudoTexto: conteudoTexto ?? this.conteudoTexto,
+      arquivoPath: arquivoPath ?? this.arquivoPath,
+      arquivoNomeOriginal: arquivoNomeOriginal ?? this.arquivoNomeOriginal,
+      arquivoNomeExibicao: arquivoNomeExibicao ?? this.arquivoNomeExibicao,
+      arquivoMimeType: arquivoMimeType ?? this.arquivoMimeType,
+      arquivoTamanhoBytes: arquivoTamanhoBytes ?? this.arquivoTamanhoBytes,
+      data: data ?? this.data,
+      dataEditadaManualmente:
+          dataEditadaManualmente ?? this.dataEditadaManualmente,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -1372,21 +1537,48 @@ class LinesCompanion extends UpdateCompanion<LineRow> {
     if (id.present) {
       map['id'] = Variable<String>(id.value);
     }
-    if (pageId.present) {
-      map['page_id'] = Variable<String>(pageId.value);
+    if (conversationId.present) {
+      map['conversation_id'] = Variable<String>(conversationId.value);
+    }
+    if (tagId.present) {
+      map['tag_id'] = Variable<String>(tagId.value);
     }
     if (position.present) {
       map['position'] = Variable<int>(position.value);
     }
-    if (content.present) {
-      map['content'] = Variable<String>(content.value);
+    if (tipo.present) {
+      map['tipo'] = Variable<int>(
+        $MessagesTable.$convertertipo.toSql(tipo.value),
+      );
     }
-    if (date.present) {
-      map['date'] = Variable<DateTime>(date.value);
+    if (conteudoTexto.present) {
+      map['conteudo_texto'] = Variable<String>(conteudoTexto.value);
     }
-    if (isDateManuallyEdited.present) {
-      map['is_date_manually_edited'] = Variable<bool>(
-        isDateManuallyEdited.value,
+    if (arquivoPath.present) {
+      map['arquivo_path'] = Variable<String>(arquivoPath.value);
+    }
+    if (arquivoNomeOriginal.present) {
+      map['arquivo_nome_original'] = Variable<String>(
+        arquivoNomeOriginal.value,
+      );
+    }
+    if (arquivoNomeExibicao.present) {
+      map['arquivo_nome_exibicao'] = Variable<String>(
+        arquivoNomeExibicao.value,
+      );
+    }
+    if (arquivoMimeType.present) {
+      map['arquivo_mime_type'] = Variable<String>(arquivoMimeType.value);
+    }
+    if (arquivoTamanhoBytes.present) {
+      map['arquivo_tamanho_bytes'] = Variable<int>(arquivoTamanhoBytes.value);
+    }
+    if (data.present) {
+      map['data'] = Variable<DateTime>(data.value);
+    }
+    if (dataEditadaManualmente.present) {
+      map['data_editada_manualmente'] = Variable<bool>(
+        dataEditadaManualmente.value,
       );
     }
     if (rowid.present) {
@@ -1397,13 +1589,20 @@ class LinesCompanion extends UpdateCompanion<LineRow> {
 
   @override
   String toString() {
-    return (StringBuffer('LinesCompanion(')
+    return (StringBuffer('MessagesCompanion(')
           ..write('id: $id, ')
-          ..write('pageId: $pageId, ')
+          ..write('conversationId: $conversationId, ')
+          ..write('tagId: $tagId, ')
           ..write('position: $position, ')
-          ..write('content: $content, ')
-          ..write('date: $date, ')
-          ..write('isDateManuallyEdited: $isDateManuallyEdited, ')
+          ..write('tipo: $tipo, ')
+          ..write('conteudoTexto: $conteudoTexto, ')
+          ..write('arquivoPath: $arquivoPath, ')
+          ..write('arquivoNomeOriginal: $arquivoNomeOriginal, ')
+          ..write('arquivoNomeExibicao: $arquivoNomeExibicao, ')
+          ..write('arquivoMimeType: $arquivoMimeType, ')
+          ..write('arquivoTamanhoBytes: $arquivoTamanhoBytes, ')
+          ..write('data: $data, ')
+          ..write('dataEditadaManualmente: $dataEditadaManualmente, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -1413,64 +1612,86 @@ class LinesCompanion extends UpdateCompanion<LineRow> {
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
-  late final $BlocksTable blocks = $BlocksTable(this);
-  late final $PagesTable pages = $PagesTable(this);
-  late final $LinesTable lines = $LinesTable(this);
+  late final $ConversationsTable conversations = $ConversationsTable(this);
+  late final $TagsTable tags = $TagsTable(this);
+  late final $MessagesTable messages = $MessagesTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
   @override
-  List<DatabaseSchemaEntity> get allSchemaEntities => [blocks, pages, lines];
+  List<DatabaseSchemaEntity> get allSchemaEntities => [
+    conversations,
+    tags,
+    messages,
+  ];
+  @override
+  StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'tags',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('messages', kind: UpdateKind.update)],
+    ),
+  ]);
 }
 
-typedef $$BlocksTableCreateCompanionBuilder =
-    BlocksCompanion Function({
+typedef $$ConversationsTableCreateCompanionBuilder =
+    ConversationsCompanion Function({
       required String id,
-      required String name,
-      required DateTime createdAt,
-      Value<bool> isEncrypted,
-      Value<String?> passwordHash,
+      required String titulo,
+      required DateTime criadoEm,
+      required DateTime atualizadoEm,
+      Value<bool> protegidoPorSenha,
+      Value<String?> senhaHash,
       Value<String?> salt,
+      Value<String> rascunho,
       Value<int> rowid,
     });
-typedef $$BlocksTableUpdateCompanionBuilder =
-    BlocksCompanion Function({
+typedef $$ConversationsTableUpdateCompanionBuilder =
+    ConversationsCompanion Function({
       Value<String> id,
-      Value<String> name,
-      Value<DateTime> createdAt,
-      Value<bool> isEncrypted,
-      Value<String?> passwordHash,
+      Value<String> titulo,
+      Value<DateTime> criadoEm,
+      Value<DateTime> atualizadoEm,
+      Value<bool> protegidoPorSenha,
+      Value<String?> senhaHash,
       Value<String?> salt,
+      Value<String> rascunho,
       Value<int> rowid,
     });
 
-final class $$BlocksTableReferences
-    extends BaseReferences<_$AppDatabase, $BlocksTable, BlockRow> {
-  $$BlocksTableReferences(super.$_db, super.$_table, super.$_typedResult);
-
-  static MultiTypedResultKey<$PagesTable, List<PageRow>> _pagesRefsTable(
-    _$AppDatabase db,
-  ) => MultiTypedResultKey.fromTable(
-    db.pages,
-    aliasName: 'blocks__id__pages__block_id',
+final class $$ConversationsTableReferences
+    extends
+        BaseReferences<_$AppDatabase, $ConversationsTable, ConversationRow> {
+  $$ConversationsTableReferences(
+    super.$_db,
+    super.$_table,
+    super.$_typedResult,
   );
 
-  $$PagesTableProcessedTableManager get pagesRefs {
-    final manager = $$PagesTableTableManager(
-      $_db,
-      $_db.pages,
-    ).filter((f) => f.blockId.id.sqlEquals($_itemColumn<String>('id')!));
+  static MultiTypedResultKey<$MessagesTable, List<MessageRow>>
+  _messagesRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+    db.messages,
+    aliasName: 'conversations__id__messages__conversation_id',
+  );
 
-    final cache = $_typedResult.readTableOrNull(_pagesRefsTable($_db));
+  $$MessagesTableProcessedTableManager get messagesRefs {
+    final manager = $$MessagesTableTableManager(
+      $_db,
+      $_db.messages,
+    ).filter((f) => f.conversationId.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_messagesRefsTable($_db));
     return ProcessedTableManager(
       manager.$state.copyWith(prefetchedData: cache),
     );
   }
 }
 
-class $$BlocksTableFilterComposer
-    extends Composer<_$AppDatabase, $BlocksTable> {
-  $$BlocksTableFilterComposer({
+class $$ConversationsTableFilterComposer
+    extends Composer<_$AppDatabase, $ConversationsTable> {
+  $$ConversationsTableFilterComposer({
     required super.$db,
     required super.$table,
     super.joinBuilder,
@@ -1482,23 +1703,28 @@ class $$BlocksTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
-  ColumnFilters<String> get name => $composableBuilder(
-    column: $table.name,
+  ColumnFilters<String> get titulo => $composableBuilder(
+    column: $table.titulo,
     builder: (column) => ColumnFilters(column),
   );
 
-  ColumnFilters<DateTime> get createdAt => $composableBuilder(
-    column: $table.createdAt,
+  ColumnFilters<DateTime> get criadoEm => $composableBuilder(
+    column: $table.criadoEm,
     builder: (column) => ColumnFilters(column),
   );
 
-  ColumnFilters<bool> get isEncrypted => $composableBuilder(
-    column: $table.isEncrypted,
+  ColumnFilters<DateTime> get atualizadoEm => $composableBuilder(
+    column: $table.atualizadoEm,
     builder: (column) => ColumnFilters(column),
   );
 
-  ColumnFilters<String> get passwordHash => $composableBuilder(
-    column: $table.passwordHash,
+  ColumnFilters<bool> get protegidoPorSenha => $composableBuilder(
+    column: $table.protegidoPorSenha,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get senhaHash => $composableBuilder(
+    column: $table.senhaHash,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -1507,22 +1733,27 @@ class $$BlocksTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
-  Expression<bool> pagesRefs(
-    Expression<bool> Function($$PagesTableFilterComposer f) f,
+  ColumnFilters<String> get rascunho => $composableBuilder(
+    column: $table.rascunho,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  Expression<bool> messagesRefs(
+    Expression<bool> Function($$MessagesTableFilterComposer f) f,
   ) {
-    final $$PagesTableFilterComposer composer = $composerBuilder(
+    final $$MessagesTableFilterComposer composer = $composerBuilder(
       composer: this,
       getCurrentColumn: (t) => t.id,
-      referencedTable: $db.pages,
-      getReferencedColumn: (t) => t.blockId,
+      referencedTable: $db.messages,
+      getReferencedColumn: (t) => t.conversationId,
       builder:
           (
             joinBuilder, {
             $addJoinBuilderToRootComposer,
             $removeJoinBuilderFromRootComposer,
-          }) => $$PagesTableFilterComposer(
+          }) => $$MessagesTableFilterComposer(
             $db: $db,
-            $table: $db.pages,
+            $table: $db.messages,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -1533,9 +1764,9 @@ class $$BlocksTableFilterComposer
   }
 }
 
-class $$BlocksTableOrderingComposer
-    extends Composer<_$AppDatabase, $BlocksTable> {
-  $$BlocksTableOrderingComposer({
+class $$ConversationsTableOrderingComposer
+    extends Composer<_$AppDatabase, $ConversationsTable> {
+  $$ConversationsTableOrderingComposer({
     required super.$db,
     required super.$table,
     super.joinBuilder,
@@ -1547,23 +1778,28 @@ class $$BlocksTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
-  ColumnOrderings<String> get name => $composableBuilder(
-    column: $table.name,
+  ColumnOrderings<String> get titulo => $composableBuilder(
+    column: $table.titulo,
     builder: (column) => ColumnOrderings(column),
   );
 
-  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
-    column: $table.createdAt,
+  ColumnOrderings<DateTime> get criadoEm => $composableBuilder(
+    column: $table.criadoEm,
     builder: (column) => ColumnOrderings(column),
   );
 
-  ColumnOrderings<bool> get isEncrypted => $composableBuilder(
-    column: $table.isEncrypted,
+  ColumnOrderings<DateTime> get atualizadoEm => $composableBuilder(
+    column: $table.atualizadoEm,
     builder: (column) => ColumnOrderings(column),
   );
 
-  ColumnOrderings<String> get passwordHash => $composableBuilder(
-    column: $table.passwordHash,
+  ColumnOrderings<bool> get protegidoPorSenha => $composableBuilder(
+    column: $table.protegidoPorSenha,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get senhaHash => $composableBuilder(
+    column: $table.senhaHash,
     builder: (column) => ColumnOrderings(column),
   );
 
@@ -1571,11 +1807,16 @@ class $$BlocksTableOrderingComposer
     column: $table.salt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get rascunho => $composableBuilder(
+    column: $table.rascunho,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
-class $$BlocksTableAnnotationComposer
-    extends Composer<_$AppDatabase, $BlocksTable> {
-  $$BlocksTableAnnotationComposer({
+class $$ConversationsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $ConversationsTable> {
+  $$ConversationsTableAnnotationComposer({
     required super.$db,
     required super.$table,
     super.joinBuilder,
@@ -1585,41 +1826,47 @@ class $$BlocksTableAnnotationComposer
   GeneratedColumn<String> get id =>
       $composableBuilder(column: $table.id, builder: (column) => column);
 
-  GeneratedColumn<String> get name =>
-      $composableBuilder(column: $table.name, builder: (column) => column);
+  GeneratedColumn<String> get titulo =>
+      $composableBuilder(column: $table.titulo, builder: (column) => column);
 
-  GeneratedColumn<DateTime> get createdAt =>
-      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+  GeneratedColumn<DateTime> get criadoEm =>
+      $composableBuilder(column: $table.criadoEm, builder: (column) => column);
 
-  GeneratedColumn<bool> get isEncrypted => $composableBuilder(
-    column: $table.isEncrypted,
+  GeneratedColumn<DateTime> get atualizadoEm => $composableBuilder(
+    column: $table.atualizadoEm,
     builder: (column) => column,
   );
 
-  GeneratedColumn<String> get passwordHash => $composableBuilder(
-    column: $table.passwordHash,
+  GeneratedColumn<bool> get protegidoPorSenha => $composableBuilder(
+    column: $table.protegidoPorSenha,
     builder: (column) => column,
   );
+
+  GeneratedColumn<String> get senhaHash =>
+      $composableBuilder(column: $table.senhaHash, builder: (column) => column);
 
   GeneratedColumn<String> get salt =>
       $composableBuilder(column: $table.salt, builder: (column) => column);
 
-  Expression<T> pagesRefs<T extends Object>(
-    Expression<T> Function($$PagesTableAnnotationComposer a) f,
+  GeneratedColumn<String> get rascunho =>
+      $composableBuilder(column: $table.rascunho, builder: (column) => column);
+
+  Expression<T> messagesRefs<T extends Object>(
+    Expression<T> Function($$MessagesTableAnnotationComposer a) f,
   ) {
-    final $$PagesTableAnnotationComposer composer = $composerBuilder(
+    final $$MessagesTableAnnotationComposer composer = $composerBuilder(
       composer: this,
       getCurrentColumn: (t) => t.id,
-      referencedTable: $db.pages,
-      getReferencedColumn: (t) => t.blockId,
+      referencedTable: $db.messages,
+      getReferencedColumn: (t) => t.conversationId,
       builder:
           (
             joinBuilder, {
             $addJoinBuilderToRootComposer,
             $removeJoinBuilderFromRootComposer,
-          }) => $$PagesTableAnnotationComposer(
+          }) => $$MessagesTableAnnotationComposer(
             $db: $db,
-            $table: $db.pages,
+            $table: $db.messages,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -1630,91 +1877,110 @@ class $$BlocksTableAnnotationComposer
   }
 }
 
-class $$BlocksTableTableManager
+class $$ConversationsTableTableManager
     extends
         RootTableManager<
           _$AppDatabase,
-          $BlocksTable,
-          BlockRow,
-          $$BlocksTableFilterComposer,
-          $$BlocksTableOrderingComposer,
-          $$BlocksTableAnnotationComposer,
-          $$BlocksTableCreateCompanionBuilder,
-          $$BlocksTableUpdateCompanionBuilder,
-          (BlockRow, $$BlocksTableReferences),
-          BlockRow,
-          PrefetchHooks Function({bool pagesRefs})
+          $ConversationsTable,
+          ConversationRow,
+          $$ConversationsTableFilterComposer,
+          $$ConversationsTableOrderingComposer,
+          $$ConversationsTableAnnotationComposer,
+          $$ConversationsTableCreateCompanionBuilder,
+          $$ConversationsTableUpdateCompanionBuilder,
+          (ConversationRow, $$ConversationsTableReferences),
+          ConversationRow,
+          PrefetchHooks Function({bool messagesRefs})
         > {
-  $$BlocksTableTableManager(_$AppDatabase db, $BlocksTable table)
+  $$ConversationsTableTableManager(_$AppDatabase db, $ConversationsTable table)
     : super(
         TableManagerState(
           db: db,
           table: table,
           createFilteringComposer: () =>
-              $$BlocksTableFilterComposer($db: db, $table: table),
+              $$ConversationsTableFilterComposer($db: db, $table: table),
           createOrderingComposer: () =>
-              $$BlocksTableOrderingComposer($db: db, $table: table),
+              $$ConversationsTableOrderingComposer($db: db, $table: table),
           createComputedFieldComposer: () =>
-              $$BlocksTableAnnotationComposer($db: db, $table: table),
+              $$ConversationsTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback:
               ({
                 Value<String> id = const Value.absent(),
-                Value<String> name = const Value.absent(),
-                Value<DateTime> createdAt = const Value.absent(),
-                Value<bool> isEncrypted = const Value.absent(),
-                Value<String?> passwordHash = const Value.absent(),
+                Value<String> titulo = const Value.absent(),
+                Value<DateTime> criadoEm = const Value.absent(),
+                Value<DateTime> atualizadoEm = const Value.absent(),
+                Value<bool> protegidoPorSenha = const Value.absent(),
+                Value<String?> senhaHash = const Value.absent(),
                 Value<String?> salt = const Value.absent(),
+                Value<String> rascunho = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
-              }) => BlocksCompanion(
+              }) => ConversationsCompanion(
                 id: id,
-                name: name,
-                createdAt: createdAt,
-                isEncrypted: isEncrypted,
-                passwordHash: passwordHash,
+                titulo: titulo,
+                criadoEm: criadoEm,
+                atualizadoEm: atualizadoEm,
+                protegidoPorSenha: protegidoPorSenha,
+                senhaHash: senhaHash,
                 salt: salt,
+                rascunho: rascunho,
                 rowid: rowid,
               ),
           createCompanionCallback:
               ({
                 required String id,
-                required String name,
-                required DateTime createdAt,
-                Value<bool> isEncrypted = const Value.absent(),
-                Value<String?> passwordHash = const Value.absent(),
+                required String titulo,
+                required DateTime criadoEm,
+                required DateTime atualizadoEm,
+                Value<bool> protegidoPorSenha = const Value.absent(),
+                Value<String?> senhaHash = const Value.absent(),
                 Value<String?> salt = const Value.absent(),
+                Value<String> rascunho = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
-              }) => BlocksCompanion.insert(
+              }) => ConversationsCompanion.insert(
                 id: id,
-                name: name,
-                createdAt: createdAt,
-                isEncrypted: isEncrypted,
-                passwordHash: passwordHash,
+                titulo: titulo,
+                criadoEm: criadoEm,
+                atualizadoEm: atualizadoEm,
+                protegidoPorSenha: protegidoPorSenha,
+                senhaHash: senhaHash,
                 salt: salt,
+                rascunho: rascunho,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
               .map(
-                (e) =>
-                    (e.readTable(table), $$BlocksTableReferences(db, table, e)),
+                (e) => (
+                  e.readTable(table),
+                  $$ConversationsTableReferences(db, table, e),
+                ),
               )
               .toList(),
-          prefetchHooksCallback: ({pagesRefs = false}) {
+          prefetchHooksCallback: ({messagesRefs = false}) {
             return PrefetchHooks(
               db: db,
-              explicitlyWatchedTables: [if (pagesRefs) db.pages],
+              explicitlyWatchedTables: [if (messagesRefs) db.messages],
               addJoins: null,
               getPrefetchedDataCallback: (items) async {
                 return [
-                  if (pagesRefs)
-                    await $_getPrefetchedData<BlockRow, $BlocksTable, PageRow>(
+                  if (messagesRefs)
+                    await $_getPrefetchedData<
+                      ConversationRow,
+                      $ConversationsTable,
+                      MessageRow
+                    >(
                       currentTable: table,
-                      referencedTable: $$BlocksTableReferences._pagesRefsTable(
-                        db,
-                      ),
+                      referencedTable: $$ConversationsTableReferences
+                          ._messagesRefsTable(db),
                       managerFromTypedResult: (p0) =>
-                          $$BlocksTableReferences(db, table, p0).pagesRefs,
+                          $$ConversationsTableReferences(
+                            db,
+                            table,
+                            p0,
+                          ).messagesRefs,
                       referencedItemsForCurrentItem: (item, referencedItems) =>
-                          referencedItems.where((e) => e.blockId == item.id),
+                          referencedItems.where(
+                            (e) => e.conversationId == item.id,
+                          ),
                       typedResults: items,
                     ),
                 ];
@@ -1725,90 +1991,60 @@ class $$BlocksTableTableManager
       );
 }
 
-typedef $$BlocksTableProcessedTableManager =
+typedef $$ConversationsTableProcessedTableManager =
     ProcessedTableManager<
       _$AppDatabase,
-      $BlocksTable,
-      BlockRow,
-      $$BlocksTableFilterComposer,
-      $$BlocksTableOrderingComposer,
-      $$BlocksTableAnnotationComposer,
-      $$BlocksTableCreateCompanionBuilder,
-      $$BlocksTableUpdateCompanionBuilder,
-      (BlockRow, $$BlocksTableReferences),
-      BlockRow,
-      PrefetchHooks Function({bool pagesRefs})
+      $ConversationsTable,
+      ConversationRow,
+      $$ConversationsTableFilterComposer,
+      $$ConversationsTableOrderingComposer,
+      $$ConversationsTableAnnotationComposer,
+      $$ConversationsTableCreateCompanionBuilder,
+      $$ConversationsTableUpdateCompanionBuilder,
+      (ConversationRow, $$ConversationsTableReferences),
+      ConversationRow,
+      PrefetchHooks Function({bool messagesRefs})
     >;
-typedef $$PagesTableCreateCompanionBuilder =
-    PagesCompanion Function({
+typedef $$TagsTableCreateCompanionBuilder =
+    TagsCompanion Function({
       required String id,
-      Value<String?> blockId,
-      required String title,
-      required DateTime createdAt,
-      required DateTime updatedAt,
-      Value<bool> isEncrypted,
-      Value<String?> passwordHash,
-      Value<String?> salt,
-      Value<String> draftContent,
+      required String nome,
+      required String cor,
       Value<int> rowid,
     });
-typedef $$PagesTableUpdateCompanionBuilder =
-    PagesCompanion Function({
+typedef $$TagsTableUpdateCompanionBuilder =
+    TagsCompanion Function({
       Value<String> id,
-      Value<String?> blockId,
-      Value<String> title,
-      Value<DateTime> createdAt,
-      Value<DateTime> updatedAt,
-      Value<bool> isEncrypted,
-      Value<String?> passwordHash,
-      Value<String?> salt,
-      Value<String> draftContent,
+      Value<String> nome,
+      Value<String> cor,
       Value<int> rowid,
     });
 
-final class $$PagesTableReferences
-    extends BaseReferences<_$AppDatabase, $PagesTable, PageRow> {
-  $$PagesTableReferences(super.$_db, super.$_table, super.$_typedResult);
+final class $$TagsTableReferences
+    extends BaseReferences<_$AppDatabase, $TagsTable, TagRow> {
+  $$TagsTableReferences(super.$_db, super.$_table, super.$_typedResult);
 
-  static $BlocksTable _blockIdTable(_$AppDatabase db) =>
-      db.blocks.createAlias('pages__block_id__blocks__id');
-
-  $$BlocksTableProcessedTableManager? get blockId {
-    final $_column = $_itemColumn<String>('block_id');
-    if ($_column == null) return null;
-    final manager = $$BlocksTableTableManager(
-      $_db,
-      $_db.blocks,
-    ).filter((f) => f.id.sqlEquals($_column));
-    final item = $_typedResult.readTableOrNull(_blockIdTable($_db));
-    if (item == null) return manager;
-    return ProcessedTableManager(
-      manager.$state.copyWith(prefetchedData: [item]),
-    );
-  }
-
-  static MultiTypedResultKey<$LinesTable, List<LineRow>> _linesRefsTable(
-    _$AppDatabase db,
-  ) => MultiTypedResultKey.fromTable(
-    db.lines,
-    aliasName: 'pages__id__lines__page_id',
+  static MultiTypedResultKey<$MessagesTable, List<MessageRow>>
+  _messagesRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+    db.messages,
+    aliasName: 'tags__id__messages__tag_id',
   );
 
-  $$LinesTableProcessedTableManager get linesRefs {
-    final manager = $$LinesTableTableManager(
+  $$MessagesTableProcessedTableManager get messagesRefs {
+    final manager = $$MessagesTableTableManager(
       $_db,
-      $_db.lines,
-    ).filter((f) => f.pageId.id.sqlEquals($_itemColumn<String>('id')!));
+      $_db.messages,
+    ).filter((f) => f.tagId.id.sqlEquals($_itemColumn<String>('id')!));
 
-    final cache = $_typedResult.readTableOrNull(_linesRefsTable($_db));
+    final cache = $_typedResult.readTableOrNull(_messagesRefsTable($_db));
     return ProcessedTableManager(
       manager.$state.copyWith(prefetchedData: cache),
     );
   }
 }
 
-class $$PagesTableFilterComposer extends Composer<_$AppDatabase, $PagesTable> {
-  $$PagesTableFilterComposer({
+class $$TagsTableFilterComposer extends Composer<_$AppDatabase, $TagsTable> {
+  $$TagsTableFilterComposer({
     required super.$db,
     required super.$table,
     super.joinBuilder,
@@ -1820,80 +2056,32 @@ class $$PagesTableFilterComposer extends Composer<_$AppDatabase, $PagesTable> {
     builder: (column) => ColumnFilters(column),
   );
 
-  ColumnFilters<String> get title => $composableBuilder(
-    column: $table.title,
+  ColumnFilters<String> get nome => $composableBuilder(
+    column: $table.nome,
     builder: (column) => ColumnFilters(column),
   );
 
-  ColumnFilters<DateTime> get createdAt => $composableBuilder(
-    column: $table.createdAt,
+  ColumnFilters<String> get cor => $composableBuilder(
+    column: $table.cor,
     builder: (column) => ColumnFilters(column),
   );
 
-  ColumnFilters<DateTime> get updatedAt => $composableBuilder(
-    column: $table.updatedAt,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<bool> get isEncrypted => $composableBuilder(
-    column: $table.isEncrypted,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get passwordHash => $composableBuilder(
-    column: $table.passwordHash,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get salt => $composableBuilder(
-    column: $table.salt,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  ColumnFilters<String> get draftContent => $composableBuilder(
-    column: $table.draftContent,
-    builder: (column) => ColumnFilters(column),
-  );
-
-  $$BlocksTableFilterComposer get blockId {
-    final $$BlocksTableFilterComposer composer = $composerBuilder(
-      composer: this,
-      getCurrentColumn: (t) => t.blockId,
-      referencedTable: $db.blocks,
-      getReferencedColumn: (t) => t.id,
-      builder:
-          (
-            joinBuilder, {
-            $addJoinBuilderToRootComposer,
-            $removeJoinBuilderFromRootComposer,
-          }) => $$BlocksTableFilterComposer(
-            $db: $db,
-            $table: $db.blocks,
-            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-            joinBuilder: joinBuilder,
-            $removeJoinBuilderFromRootComposer:
-                $removeJoinBuilderFromRootComposer,
-          ),
-    );
-    return composer;
-  }
-
-  Expression<bool> linesRefs(
-    Expression<bool> Function($$LinesTableFilterComposer f) f,
+  Expression<bool> messagesRefs(
+    Expression<bool> Function($$MessagesTableFilterComposer f) f,
   ) {
-    final $$LinesTableFilterComposer composer = $composerBuilder(
+    final $$MessagesTableFilterComposer composer = $composerBuilder(
       composer: this,
       getCurrentColumn: (t) => t.id,
-      referencedTable: $db.lines,
-      getReferencedColumn: (t) => t.pageId,
+      referencedTable: $db.messages,
+      getReferencedColumn: (t) => t.tagId,
       builder:
           (
             joinBuilder, {
             $addJoinBuilderToRootComposer,
             $removeJoinBuilderFromRootComposer,
-          }) => $$LinesTableFilterComposer(
+          }) => $$MessagesTableFilterComposer(
             $db: $db,
-            $table: $db.lines,
+            $table: $db.messages,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -1904,9 +2092,8 @@ class $$PagesTableFilterComposer extends Composer<_$AppDatabase, $PagesTable> {
   }
 }
 
-class $$PagesTableOrderingComposer
-    extends Composer<_$AppDatabase, $PagesTable> {
-  $$PagesTableOrderingComposer({
+class $$TagsTableOrderingComposer extends Composer<_$AppDatabase, $TagsTable> {
+  $$TagsTableOrderingComposer({
     required super.$db,
     required super.$table,
     super.joinBuilder,
@@ -1918,68 +2105,20 @@ class $$PagesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
-  ColumnOrderings<String> get title => $composableBuilder(
-    column: $table.title,
+  ColumnOrderings<String> get nome => $composableBuilder(
+    column: $table.nome,
     builder: (column) => ColumnOrderings(column),
   );
 
-  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
-    column: $table.createdAt,
+  ColumnOrderings<String> get cor => $composableBuilder(
+    column: $table.cor,
     builder: (column) => ColumnOrderings(column),
   );
-
-  ColumnOrderings<DateTime> get updatedAt => $composableBuilder(
-    column: $table.updatedAt,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<bool> get isEncrypted => $composableBuilder(
-    column: $table.isEncrypted,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get passwordHash => $composableBuilder(
-    column: $table.passwordHash,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get salt => $composableBuilder(
-    column: $table.salt,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  ColumnOrderings<String> get draftContent => $composableBuilder(
-    column: $table.draftContent,
-    builder: (column) => ColumnOrderings(column),
-  );
-
-  $$BlocksTableOrderingComposer get blockId {
-    final $$BlocksTableOrderingComposer composer = $composerBuilder(
-      composer: this,
-      getCurrentColumn: (t) => t.blockId,
-      referencedTable: $db.blocks,
-      getReferencedColumn: (t) => t.id,
-      builder:
-          (
-            joinBuilder, {
-            $addJoinBuilderToRootComposer,
-            $removeJoinBuilderFromRootComposer,
-          }) => $$BlocksTableOrderingComposer(
-            $db: $db,
-            $table: $db.blocks,
-            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-            joinBuilder: joinBuilder,
-            $removeJoinBuilderFromRootComposer:
-                $removeJoinBuilderFromRootComposer,
-          ),
-    );
-    return composer;
-  }
 }
 
-class $$PagesTableAnnotationComposer
-    extends Composer<_$AppDatabase, $PagesTable> {
-  $$PagesTableAnnotationComposer({
+class $$TagsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $TagsTable> {
+  $$TagsTableAnnotationComposer({
     required super.$db,
     required super.$table,
     super.joinBuilder,
@@ -1989,72 +2128,28 @@ class $$PagesTableAnnotationComposer
   GeneratedColumn<String> get id =>
       $composableBuilder(column: $table.id, builder: (column) => column);
 
-  GeneratedColumn<String> get title =>
-      $composableBuilder(column: $table.title, builder: (column) => column);
+  GeneratedColumn<String> get nome =>
+      $composableBuilder(column: $table.nome, builder: (column) => column);
 
-  GeneratedColumn<DateTime> get createdAt =>
-      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+  GeneratedColumn<String> get cor =>
+      $composableBuilder(column: $table.cor, builder: (column) => column);
 
-  GeneratedColumn<DateTime> get updatedAt =>
-      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
-
-  GeneratedColumn<bool> get isEncrypted => $composableBuilder(
-    column: $table.isEncrypted,
-    builder: (column) => column,
-  );
-
-  GeneratedColumn<String> get passwordHash => $composableBuilder(
-    column: $table.passwordHash,
-    builder: (column) => column,
-  );
-
-  GeneratedColumn<String> get salt =>
-      $composableBuilder(column: $table.salt, builder: (column) => column);
-
-  GeneratedColumn<String> get draftContent => $composableBuilder(
-    column: $table.draftContent,
-    builder: (column) => column,
-  );
-
-  $$BlocksTableAnnotationComposer get blockId {
-    final $$BlocksTableAnnotationComposer composer = $composerBuilder(
-      composer: this,
-      getCurrentColumn: (t) => t.blockId,
-      referencedTable: $db.blocks,
-      getReferencedColumn: (t) => t.id,
-      builder:
-          (
-            joinBuilder, {
-            $addJoinBuilderToRootComposer,
-            $removeJoinBuilderFromRootComposer,
-          }) => $$BlocksTableAnnotationComposer(
-            $db: $db,
-            $table: $db.blocks,
-            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
-            joinBuilder: joinBuilder,
-            $removeJoinBuilderFromRootComposer:
-                $removeJoinBuilderFromRootComposer,
-          ),
-    );
-    return composer;
-  }
-
-  Expression<T> linesRefs<T extends Object>(
-    Expression<T> Function($$LinesTableAnnotationComposer a) f,
+  Expression<T> messagesRefs<T extends Object>(
+    Expression<T> Function($$MessagesTableAnnotationComposer a) f,
   ) {
-    final $$LinesTableAnnotationComposer composer = $composerBuilder(
+    final $$MessagesTableAnnotationComposer composer = $composerBuilder(
       composer: this,
       getCurrentColumn: (t) => t.id,
-      referencedTable: $db.lines,
-      getReferencedColumn: (t) => t.pageId,
+      referencedTable: $db.messages,
+      getReferencedColumn: (t) => t.tagId,
       builder:
           (
             joinBuilder, {
             $addJoinBuilderToRootComposer,
             $removeJoinBuilderFromRootComposer,
-          }) => $$LinesTableAnnotationComposer(
+          }) => $$MessagesTableAnnotationComposer(
             $db: $db,
-            $table: $db.lines,
+            $table: $db.messages,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -2065,134 +2160,74 @@ class $$PagesTableAnnotationComposer
   }
 }
 
-class $$PagesTableTableManager
+class $$TagsTableTableManager
     extends
         RootTableManager<
           _$AppDatabase,
-          $PagesTable,
-          PageRow,
-          $$PagesTableFilterComposer,
-          $$PagesTableOrderingComposer,
-          $$PagesTableAnnotationComposer,
-          $$PagesTableCreateCompanionBuilder,
-          $$PagesTableUpdateCompanionBuilder,
-          (PageRow, $$PagesTableReferences),
-          PageRow,
-          PrefetchHooks Function({bool blockId, bool linesRefs})
+          $TagsTable,
+          TagRow,
+          $$TagsTableFilterComposer,
+          $$TagsTableOrderingComposer,
+          $$TagsTableAnnotationComposer,
+          $$TagsTableCreateCompanionBuilder,
+          $$TagsTableUpdateCompanionBuilder,
+          (TagRow, $$TagsTableReferences),
+          TagRow,
+          PrefetchHooks Function({bool messagesRefs})
         > {
-  $$PagesTableTableManager(_$AppDatabase db, $PagesTable table)
+  $$TagsTableTableManager(_$AppDatabase db, $TagsTable table)
     : super(
         TableManagerState(
           db: db,
           table: table,
           createFilteringComposer: () =>
-              $$PagesTableFilterComposer($db: db, $table: table),
+              $$TagsTableFilterComposer($db: db, $table: table),
           createOrderingComposer: () =>
-              $$PagesTableOrderingComposer($db: db, $table: table),
+              $$TagsTableOrderingComposer($db: db, $table: table),
           createComputedFieldComposer: () =>
-              $$PagesTableAnnotationComposer($db: db, $table: table),
+              $$TagsTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback:
               ({
                 Value<String> id = const Value.absent(),
-                Value<String?> blockId = const Value.absent(),
-                Value<String> title = const Value.absent(),
-                Value<DateTime> createdAt = const Value.absent(),
-                Value<DateTime> updatedAt = const Value.absent(),
-                Value<bool> isEncrypted = const Value.absent(),
-                Value<String?> passwordHash = const Value.absent(),
-                Value<String?> salt = const Value.absent(),
-                Value<String> draftContent = const Value.absent(),
+                Value<String> nome = const Value.absent(),
+                Value<String> cor = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
-              }) => PagesCompanion(
-                id: id,
-                blockId: blockId,
-                title: title,
-                createdAt: createdAt,
-                updatedAt: updatedAt,
-                isEncrypted: isEncrypted,
-                passwordHash: passwordHash,
-                salt: salt,
-                draftContent: draftContent,
-                rowid: rowid,
-              ),
+              }) => TagsCompanion(id: id, nome: nome, cor: cor, rowid: rowid),
           createCompanionCallback:
               ({
                 required String id,
-                Value<String?> blockId = const Value.absent(),
-                required String title,
-                required DateTime createdAt,
-                required DateTime updatedAt,
-                Value<bool> isEncrypted = const Value.absent(),
-                Value<String?> passwordHash = const Value.absent(),
-                Value<String?> salt = const Value.absent(),
-                Value<String> draftContent = const Value.absent(),
+                required String nome,
+                required String cor,
                 Value<int> rowid = const Value.absent(),
-              }) => PagesCompanion.insert(
+              }) => TagsCompanion.insert(
                 id: id,
-                blockId: blockId,
-                title: title,
-                createdAt: createdAt,
-                updatedAt: updatedAt,
-                isEncrypted: isEncrypted,
-                passwordHash: passwordHash,
-                salt: salt,
-                draftContent: draftContent,
+                nome: nome,
+                cor: cor,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
               .map(
                 (e) =>
-                    (e.readTable(table), $$PagesTableReferences(db, table, e)),
+                    (e.readTable(table), $$TagsTableReferences(db, table, e)),
               )
               .toList(),
-          prefetchHooksCallback: ({blockId = false, linesRefs = false}) {
+          prefetchHooksCallback: ({messagesRefs = false}) {
             return PrefetchHooks(
               db: db,
-              explicitlyWatchedTables: [if (linesRefs) db.lines],
-              addJoins:
-                  <
-                    T extends TableManagerState<
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic
-                    >
-                  >(state) {
-                    if (blockId) {
-                      state =
-                          state.withJoin(
-                                currentTable: table,
-                                currentColumn: table.blockId,
-                                referencedTable: $$PagesTableReferences
-                                    ._blockIdTable(db),
-                                referencedColumn: $$PagesTableReferences
-                                    ._blockIdTable(db)
-                                    .id,
-                              )
-                              as T;
-                    }
-
-                    return state;
-                  },
+              explicitlyWatchedTables: [if (messagesRefs) db.messages],
+              addJoins: null,
               getPrefetchedDataCallback: (items) async {
                 return [
-                  if (linesRefs)
-                    await $_getPrefetchedData<PageRow, $PagesTable, LineRow>(
+                  if (messagesRefs)
+                    await $_getPrefetchedData<TagRow, $TagsTable, MessageRow>(
                       currentTable: table,
-                      referencedTable: $$PagesTableReferences._linesRefsTable(
+                      referencedTable: $$TagsTableReferences._messagesRefsTable(
                         db,
                       ),
                       managerFromTypedResult: (p0) =>
-                          $$PagesTableReferences(db, table, p0).linesRefs,
+                          $$TagsTableReferences(db, table, p0).messagesRefs,
                       referencedItemsForCurrentItem: (item, referencedItems) =>
-                          referencedItems.where((e) => e.pageId == item.id),
+                          referencedItems.where((e) => e.tagId == item.id),
                       typedResults: items,
                     ),
                 ];
@@ -2203,56 +2238,88 @@ class $$PagesTableTableManager
       );
 }
 
-typedef $$PagesTableProcessedTableManager =
+typedef $$TagsTableProcessedTableManager =
     ProcessedTableManager<
       _$AppDatabase,
-      $PagesTable,
-      PageRow,
-      $$PagesTableFilterComposer,
-      $$PagesTableOrderingComposer,
-      $$PagesTableAnnotationComposer,
-      $$PagesTableCreateCompanionBuilder,
-      $$PagesTableUpdateCompanionBuilder,
-      (PageRow, $$PagesTableReferences),
-      PageRow,
-      PrefetchHooks Function({bool blockId, bool linesRefs})
+      $TagsTable,
+      TagRow,
+      $$TagsTableFilterComposer,
+      $$TagsTableOrderingComposer,
+      $$TagsTableAnnotationComposer,
+      $$TagsTableCreateCompanionBuilder,
+      $$TagsTableUpdateCompanionBuilder,
+      (TagRow, $$TagsTableReferences),
+      TagRow,
+      PrefetchHooks Function({bool messagesRefs})
     >;
-typedef $$LinesTableCreateCompanionBuilder =
-    LinesCompanion Function({
+typedef $$MessagesTableCreateCompanionBuilder =
+    MessagesCompanion Function({
       required String id,
-      required String pageId,
+      required String conversationId,
+      Value<String?> tagId,
       required int position,
-      required String content,
-      required DateTime date,
-      Value<bool> isDateManuallyEdited,
+      Value<MessageType> tipo,
+      Value<String?> conteudoTexto,
+      Value<String?> arquivoPath,
+      Value<String?> arquivoNomeOriginal,
+      Value<String?> arquivoNomeExibicao,
+      Value<String?> arquivoMimeType,
+      Value<int?> arquivoTamanhoBytes,
+      required DateTime data,
+      Value<bool> dataEditadaManualmente,
       Value<int> rowid,
     });
-typedef $$LinesTableUpdateCompanionBuilder =
-    LinesCompanion Function({
+typedef $$MessagesTableUpdateCompanionBuilder =
+    MessagesCompanion Function({
       Value<String> id,
-      Value<String> pageId,
+      Value<String> conversationId,
+      Value<String?> tagId,
       Value<int> position,
-      Value<String> content,
-      Value<DateTime> date,
-      Value<bool> isDateManuallyEdited,
+      Value<MessageType> tipo,
+      Value<String?> conteudoTexto,
+      Value<String?> arquivoPath,
+      Value<String?> arquivoNomeOriginal,
+      Value<String?> arquivoNomeExibicao,
+      Value<String?> arquivoMimeType,
+      Value<int?> arquivoTamanhoBytes,
+      Value<DateTime> data,
+      Value<bool> dataEditadaManualmente,
       Value<int> rowid,
     });
 
-final class $$LinesTableReferences
-    extends BaseReferences<_$AppDatabase, $LinesTable, LineRow> {
-  $$LinesTableReferences(super.$_db, super.$_table, super.$_typedResult);
+final class $$MessagesTableReferences
+    extends BaseReferences<_$AppDatabase, $MessagesTable, MessageRow> {
+  $$MessagesTableReferences(super.$_db, super.$_table, super.$_typedResult);
 
-  static $PagesTable _pageIdTable(_$AppDatabase db) =>
-      db.pages.createAlias('lines__page_id__pages__id');
+  static $ConversationsTable _conversationIdTable(_$AppDatabase db) => db
+      .conversations
+      .createAlias('messages__conversation_id__conversations__id');
 
-  $$PagesTableProcessedTableManager get pageId {
-    final $_column = $_itemColumn<String>('page_id')!;
+  $$ConversationsTableProcessedTableManager get conversationId {
+    final $_column = $_itemColumn<String>('conversation_id')!;
 
-    final manager = $$PagesTableTableManager(
+    final manager = $$ConversationsTableTableManager(
       $_db,
-      $_db.pages,
+      $_db.conversations,
     ).filter((f) => f.id.sqlEquals($_column));
-    final item = $_typedResult.readTableOrNull(_pageIdTable($_db));
+    final item = $_typedResult.readTableOrNull(_conversationIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+
+  static $TagsTable _tagIdTable(_$AppDatabase db) =>
+      db.tags.createAlias('messages__tag_id__tags__id');
+
+  $$TagsTableProcessedTableManager? get tagId {
+    final $_column = $_itemColumn<String>('tag_id');
+    if ($_column == null) return null;
+    final manager = $$TagsTableTableManager(
+      $_db,
+      $_db.tags,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_tagIdTable($_db));
     if (item == null) return manager;
     return ProcessedTableManager(
       manager.$state.copyWith(prefetchedData: [item]),
@@ -2260,8 +2327,9 @@ final class $$LinesTableReferences
   }
 }
 
-class $$LinesTableFilterComposer extends Composer<_$AppDatabase, $LinesTable> {
-  $$LinesTableFilterComposer({
+class $$MessagesTableFilterComposer
+    extends Composer<_$AppDatabase, $MessagesTable> {
+  $$MessagesTableFilterComposer({
     required super.$db,
     required super.$table,
     super.joinBuilder,
@@ -2278,35 +2346,89 @@ class $$LinesTableFilterComposer extends Composer<_$AppDatabase, $LinesTable> {
     builder: (column) => ColumnFilters(column),
   );
 
-  ColumnFilters<String> get content => $composableBuilder(
-    column: $table.content,
+  ColumnWithTypeConverterFilters<MessageType, MessageType, int> get tipo =>
+      $composableBuilder(
+        column: $table.tipo,
+        builder: (column) => ColumnWithTypeConverterFilters(column),
+      );
+
+  ColumnFilters<String> get conteudoTexto => $composableBuilder(
+    column: $table.conteudoTexto,
     builder: (column) => ColumnFilters(column),
   );
 
-  ColumnFilters<DateTime> get date => $composableBuilder(
-    column: $table.date,
+  ColumnFilters<String> get arquivoPath => $composableBuilder(
+    column: $table.arquivoPath,
     builder: (column) => ColumnFilters(column),
   );
 
-  ColumnFilters<bool> get isDateManuallyEdited => $composableBuilder(
-    column: $table.isDateManuallyEdited,
+  ColumnFilters<String> get arquivoNomeOriginal => $composableBuilder(
+    column: $table.arquivoNomeOriginal,
     builder: (column) => ColumnFilters(column),
   );
 
-  $$PagesTableFilterComposer get pageId {
-    final $$PagesTableFilterComposer composer = $composerBuilder(
+  ColumnFilters<String> get arquivoNomeExibicao => $composableBuilder(
+    column: $table.arquivoNomeExibicao,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get arquivoMimeType => $composableBuilder(
+    column: $table.arquivoMimeType,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get arquivoTamanhoBytes => $composableBuilder(
+    column: $table.arquivoTamanhoBytes,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get data => $composableBuilder(
+    column: $table.data,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get dataEditadaManualmente => $composableBuilder(
+    column: $table.dataEditadaManualmente,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  $$ConversationsTableFilterComposer get conversationId {
+    final $$ConversationsTableFilterComposer composer = $composerBuilder(
       composer: this,
-      getCurrentColumn: (t) => t.pageId,
-      referencedTable: $db.pages,
+      getCurrentColumn: (t) => t.conversationId,
+      referencedTable: $db.conversations,
       getReferencedColumn: (t) => t.id,
       builder:
           (
             joinBuilder, {
             $addJoinBuilderToRootComposer,
             $removeJoinBuilderFromRootComposer,
-          }) => $$PagesTableFilterComposer(
+          }) => $$ConversationsTableFilterComposer(
             $db: $db,
-            $table: $db.pages,
+            $table: $db.conversations,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  $$TagsTableFilterComposer get tagId {
+    final $$TagsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.tagId,
+      referencedTable: $db.tags,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TagsTableFilterComposer(
+            $db: $db,
+            $table: $db.tags,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -2317,9 +2439,9 @@ class $$LinesTableFilterComposer extends Composer<_$AppDatabase, $LinesTable> {
   }
 }
 
-class $$LinesTableOrderingComposer
-    extends Composer<_$AppDatabase, $LinesTable> {
-  $$LinesTableOrderingComposer({
+class $$MessagesTableOrderingComposer
+    extends Composer<_$AppDatabase, $MessagesTable> {
+  $$MessagesTableOrderingComposer({
     required super.$db,
     required super.$table,
     super.joinBuilder,
@@ -2336,35 +2458,88 @@ class $$LinesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
-  ColumnOrderings<String> get content => $composableBuilder(
-    column: $table.content,
+  ColumnOrderings<int> get tipo => $composableBuilder(
+    column: $table.tipo,
     builder: (column) => ColumnOrderings(column),
   );
 
-  ColumnOrderings<DateTime> get date => $composableBuilder(
-    column: $table.date,
+  ColumnOrderings<String> get conteudoTexto => $composableBuilder(
+    column: $table.conteudoTexto,
     builder: (column) => ColumnOrderings(column),
   );
 
-  ColumnOrderings<bool> get isDateManuallyEdited => $composableBuilder(
-    column: $table.isDateManuallyEdited,
+  ColumnOrderings<String> get arquivoPath => $composableBuilder(
+    column: $table.arquivoPath,
     builder: (column) => ColumnOrderings(column),
   );
 
-  $$PagesTableOrderingComposer get pageId {
-    final $$PagesTableOrderingComposer composer = $composerBuilder(
+  ColumnOrderings<String> get arquivoNomeOriginal => $composableBuilder(
+    column: $table.arquivoNomeOriginal,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get arquivoNomeExibicao => $composableBuilder(
+    column: $table.arquivoNomeExibicao,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get arquivoMimeType => $composableBuilder(
+    column: $table.arquivoMimeType,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get arquivoTamanhoBytes => $composableBuilder(
+    column: $table.arquivoTamanhoBytes,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get data => $composableBuilder(
+    column: $table.data,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get dataEditadaManualmente => $composableBuilder(
+    column: $table.dataEditadaManualmente,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  $$ConversationsTableOrderingComposer get conversationId {
+    final $$ConversationsTableOrderingComposer composer = $composerBuilder(
       composer: this,
-      getCurrentColumn: (t) => t.pageId,
-      referencedTable: $db.pages,
+      getCurrentColumn: (t) => t.conversationId,
+      referencedTable: $db.conversations,
       getReferencedColumn: (t) => t.id,
       builder:
           (
             joinBuilder, {
             $addJoinBuilderToRootComposer,
             $removeJoinBuilderFromRootComposer,
-          }) => $$PagesTableOrderingComposer(
+          }) => $$ConversationsTableOrderingComposer(
             $db: $db,
-            $table: $db.pages,
+            $table: $db.conversations,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  $$TagsTableOrderingComposer get tagId {
+    final $$TagsTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.tagId,
+      referencedTable: $db.tags,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TagsTableOrderingComposer(
+            $db: $db,
+            $table: $db.tags,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -2375,9 +2550,9 @@ class $$LinesTableOrderingComposer
   }
 }
 
-class $$LinesTableAnnotationComposer
-    extends Composer<_$AppDatabase, $LinesTable> {
-  $$LinesTableAnnotationComposer({
+class $$MessagesTableAnnotationComposer
+    extends Composer<_$AppDatabase, $MessagesTable> {
+  $$MessagesTableAnnotationComposer({
     required super.$db,
     required super.$table,
     super.joinBuilder,
@@ -2390,31 +2565,84 @@ class $$LinesTableAnnotationComposer
   GeneratedColumn<int> get position =>
       $composableBuilder(column: $table.position, builder: (column) => column);
 
-  GeneratedColumn<String> get content =>
-      $composableBuilder(column: $table.content, builder: (column) => column);
+  GeneratedColumnWithTypeConverter<MessageType, int> get tipo =>
+      $composableBuilder(column: $table.tipo, builder: (column) => column);
 
-  GeneratedColumn<DateTime> get date =>
-      $composableBuilder(column: $table.date, builder: (column) => column);
-
-  GeneratedColumn<bool> get isDateManuallyEdited => $composableBuilder(
-    column: $table.isDateManuallyEdited,
+  GeneratedColumn<String> get conteudoTexto => $composableBuilder(
+    column: $table.conteudoTexto,
     builder: (column) => column,
   );
 
-  $$PagesTableAnnotationComposer get pageId {
-    final $$PagesTableAnnotationComposer composer = $composerBuilder(
+  GeneratedColumn<String> get arquivoPath => $composableBuilder(
+    column: $table.arquivoPath,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get arquivoNomeOriginal => $composableBuilder(
+    column: $table.arquivoNomeOriginal,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get arquivoNomeExibicao => $composableBuilder(
+    column: $table.arquivoNomeExibicao,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get arquivoMimeType => $composableBuilder(
+    column: $table.arquivoMimeType,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get arquivoTamanhoBytes => $composableBuilder(
+    column: $table.arquivoTamanhoBytes,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get data =>
+      $composableBuilder(column: $table.data, builder: (column) => column);
+
+  GeneratedColumn<bool> get dataEditadaManualmente => $composableBuilder(
+    column: $table.dataEditadaManualmente,
+    builder: (column) => column,
+  );
+
+  $$ConversationsTableAnnotationComposer get conversationId {
+    final $$ConversationsTableAnnotationComposer composer = $composerBuilder(
       composer: this,
-      getCurrentColumn: (t) => t.pageId,
-      referencedTable: $db.pages,
+      getCurrentColumn: (t) => t.conversationId,
+      referencedTable: $db.conversations,
       getReferencedColumn: (t) => t.id,
       builder:
           (
             joinBuilder, {
             $addJoinBuilderToRootComposer,
             $removeJoinBuilderFromRootComposer,
-          }) => $$PagesTableAnnotationComposer(
+          }) => $$ConversationsTableAnnotationComposer(
             $db: $db,
-            $table: $db.pages,
+            $table: $db.conversations,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  $$TagsTableAnnotationComposer get tagId {
+    final $$TagsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.tagId,
+      referencedTable: $db.tags,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TagsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.tags,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -2425,75 +2653,105 @@ class $$LinesTableAnnotationComposer
   }
 }
 
-class $$LinesTableTableManager
+class $$MessagesTableTableManager
     extends
         RootTableManager<
           _$AppDatabase,
-          $LinesTable,
-          LineRow,
-          $$LinesTableFilterComposer,
-          $$LinesTableOrderingComposer,
-          $$LinesTableAnnotationComposer,
-          $$LinesTableCreateCompanionBuilder,
-          $$LinesTableUpdateCompanionBuilder,
-          (LineRow, $$LinesTableReferences),
-          LineRow,
-          PrefetchHooks Function({bool pageId})
+          $MessagesTable,
+          MessageRow,
+          $$MessagesTableFilterComposer,
+          $$MessagesTableOrderingComposer,
+          $$MessagesTableAnnotationComposer,
+          $$MessagesTableCreateCompanionBuilder,
+          $$MessagesTableUpdateCompanionBuilder,
+          (MessageRow, $$MessagesTableReferences),
+          MessageRow,
+          PrefetchHooks Function({bool conversationId, bool tagId})
         > {
-  $$LinesTableTableManager(_$AppDatabase db, $LinesTable table)
+  $$MessagesTableTableManager(_$AppDatabase db, $MessagesTable table)
     : super(
         TableManagerState(
           db: db,
           table: table,
           createFilteringComposer: () =>
-              $$LinesTableFilterComposer($db: db, $table: table),
+              $$MessagesTableFilterComposer($db: db, $table: table),
           createOrderingComposer: () =>
-              $$LinesTableOrderingComposer($db: db, $table: table),
+              $$MessagesTableOrderingComposer($db: db, $table: table),
           createComputedFieldComposer: () =>
-              $$LinesTableAnnotationComposer($db: db, $table: table),
+              $$MessagesTableAnnotationComposer($db: db, $table: table),
           updateCompanionCallback:
               ({
                 Value<String> id = const Value.absent(),
-                Value<String> pageId = const Value.absent(),
+                Value<String> conversationId = const Value.absent(),
+                Value<String?> tagId = const Value.absent(),
                 Value<int> position = const Value.absent(),
-                Value<String> content = const Value.absent(),
-                Value<DateTime> date = const Value.absent(),
-                Value<bool> isDateManuallyEdited = const Value.absent(),
+                Value<MessageType> tipo = const Value.absent(),
+                Value<String?> conteudoTexto = const Value.absent(),
+                Value<String?> arquivoPath = const Value.absent(),
+                Value<String?> arquivoNomeOriginal = const Value.absent(),
+                Value<String?> arquivoNomeExibicao = const Value.absent(),
+                Value<String?> arquivoMimeType = const Value.absent(),
+                Value<int?> arquivoTamanhoBytes = const Value.absent(),
+                Value<DateTime> data = const Value.absent(),
+                Value<bool> dataEditadaManualmente = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
-              }) => LinesCompanion(
+              }) => MessagesCompanion(
                 id: id,
-                pageId: pageId,
+                conversationId: conversationId,
+                tagId: tagId,
                 position: position,
-                content: content,
-                date: date,
-                isDateManuallyEdited: isDateManuallyEdited,
+                tipo: tipo,
+                conteudoTexto: conteudoTexto,
+                arquivoPath: arquivoPath,
+                arquivoNomeOriginal: arquivoNomeOriginal,
+                arquivoNomeExibicao: arquivoNomeExibicao,
+                arquivoMimeType: arquivoMimeType,
+                arquivoTamanhoBytes: arquivoTamanhoBytes,
+                data: data,
+                dataEditadaManualmente: dataEditadaManualmente,
                 rowid: rowid,
               ),
           createCompanionCallback:
               ({
                 required String id,
-                required String pageId,
+                required String conversationId,
+                Value<String?> tagId = const Value.absent(),
                 required int position,
-                required String content,
-                required DateTime date,
-                Value<bool> isDateManuallyEdited = const Value.absent(),
+                Value<MessageType> tipo = const Value.absent(),
+                Value<String?> conteudoTexto = const Value.absent(),
+                Value<String?> arquivoPath = const Value.absent(),
+                Value<String?> arquivoNomeOriginal = const Value.absent(),
+                Value<String?> arquivoNomeExibicao = const Value.absent(),
+                Value<String?> arquivoMimeType = const Value.absent(),
+                Value<int?> arquivoTamanhoBytes = const Value.absent(),
+                required DateTime data,
+                Value<bool> dataEditadaManualmente = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
-              }) => LinesCompanion.insert(
+              }) => MessagesCompanion.insert(
                 id: id,
-                pageId: pageId,
+                conversationId: conversationId,
+                tagId: tagId,
                 position: position,
-                content: content,
-                date: date,
-                isDateManuallyEdited: isDateManuallyEdited,
+                tipo: tipo,
+                conteudoTexto: conteudoTexto,
+                arquivoPath: arquivoPath,
+                arquivoNomeOriginal: arquivoNomeOriginal,
+                arquivoNomeExibicao: arquivoNomeExibicao,
+                arquivoMimeType: arquivoMimeType,
+                arquivoTamanhoBytes: arquivoTamanhoBytes,
+                data: data,
+                dataEditadaManualmente: dataEditadaManualmente,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
               .map(
-                (e) =>
-                    (e.readTable(table), $$LinesTableReferences(db, table, e)),
+                (e) => (
+                  e.readTable(table),
+                  $$MessagesTableReferences(db, table, e),
+                ),
               )
               .toList(),
-          prefetchHooksCallback: ({pageId = false}) {
+          prefetchHooksCallback: ({conversationId = false, tagId = false}) {
             return PrefetchHooks(
               db: db,
               explicitlyWatchedTables: [],
@@ -2513,15 +2771,28 @@ class $$LinesTableTableManager
                       dynamic
                     >
                   >(state) {
-                    if (pageId) {
+                    if (conversationId) {
                       state =
                           state.withJoin(
                                 currentTable: table,
-                                currentColumn: table.pageId,
-                                referencedTable: $$LinesTableReferences
-                                    ._pageIdTable(db),
-                                referencedColumn: $$LinesTableReferences
-                                    ._pageIdTable(db)
+                                currentColumn: table.conversationId,
+                                referencedTable: $$MessagesTableReferences
+                                    ._conversationIdTable(db),
+                                referencedColumn: $$MessagesTableReferences
+                                    ._conversationIdTable(db)
+                                    .id,
+                              )
+                              as T;
+                    }
+                    if (tagId) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.tagId,
+                                referencedTable: $$MessagesTableReferences
+                                    ._tagIdTable(db),
+                                referencedColumn: $$MessagesTableReferences
+                                    ._tagIdTable(db)
                                     .id,
                               )
                               as T;
@@ -2538,28 +2809,27 @@ class $$LinesTableTableManager
       );
 }
 
-typedef $$LinesTableProcessedTableManager =
+typedef $$MessagesTableProcessedTableManager =
     ProcessedTableManager<
       _$AppDatabase,
-      $LinesTable,
-      LineRow,
-      $$LinesTableFilterComposer,
-      $$LinesTableOrderingComposer,
-      $$LinesTableAnnotationComposer,
-      $$LinesTableCreateCompanionBuilder,
-      $$LinesTableUpdateCompanionBuilder,
-      (LineRow, $$LinesTableReferences),
-      LineRow,
-      PrefetchHooks Function({bool pageId})
+      $MessagesTable,
+      MessageRow,
+      $$MessagesTableFilterComposer,
+      $$MessagesTableOrderingComposer,
+      $$MessagesTableAnnotationComposer,
+      $$MessagesTableCreateCompanionBuilder,
+      $$MessagesTableUpdateCompanionBuilder,
+      (MessageRow, $$MessagesTableReferences),
+      MessageRow,
+      PrefetchHooks Function({bool conversationId, bool tagId})
     >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
   $AppDatabaseManager(this._db);
-  $$BlocksTableTableManager get blocks =>
-      $$BlocksTableTableManager(_db, _db.blocks);
-  $$PagesTableTableManager get pages =>
-      $$PagesTableTableManager(_db, _db.pages);
-  $$LinesTableTableManager get lines =>
-      $$LinesTableTableManager(_db, _db.lines);
+  $$ConversationsTableTableManager get conversations =>
+      $$ConversationsTableTableManager(_db, _db.conversations);
+  $$TagsTableTableManager get tags => $$TagsTableTableManager(_db, _db.tags);
+  $$MessagesTableTableManager get messages =>
+      $$MessagesTableTableManager(_db, _db.messages);
 }
