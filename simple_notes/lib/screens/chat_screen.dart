@@ -1,24 +1,228 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../models/message.dart';
 import '../providers/conversation_providers.dart';
+import '../widgets/message_bubble.dart';
 
-/// Tela da Conversa (antiga `EditorScreen`).
-///
-/// Na Sprint 0 esta tela só carrega e exibe o título da Conversa, deixando
-/// a navegação a partir da tela inicial já funcionando de ponta a ponta. O
-/// chat de Mensagens propriamente dito — balão, campo de composição,
-/// rascunho persistente e envio (RF02) — é implementado a partir da
-/// Sprint 1, reaproveitando `conversationRepositoryProvider` já criado
-/// aqui.
-class ChatScreen extends ConsumerWidget {
+/// Tela de chat de uma Conversa (RF01, RF02, RF03) — Sprint 1: só mensagens
+/// de texto. Anexos de arquivo (RF02.3) entram na Sprint 2 e o gesto de
+/// arrastar para tag (RF04) na Sprint 3 — os pontos de extensão ficam
+/// marcados nos comentários abaixo.
+class ChatScreen extends ConsumerStatefulWidget {
   final String conversationId;
 
   const ChatScreen({super.key, required this.conversationId});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ChatScreen> createState() => _ChatScreenState();
+}
+
+class _ChatScreenState extends ConsumerState<ChatScreen> {
+  final _controller = TextEditingController();
+  final _scrollController = ScrollController();
+  Timer? _debounce;
+
+  // Só ficamos true depois de carregar o rascunho já salvo no banco; evita
+  // que o dispose() sobrescreva um rascunho existente com string vazia caso
+  // o usuário saia da tela antes do carregamento inicial terminar.
+  bool _draftLoaded = false;
+  int _lastMessageCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadInitialDraft();
+  }
+
+  Future<void> _loadInitialDraft() async {
+    final conversation = await ref
+        .read(conversationRepositoryProvider)
+        .getById(widget.conversationId);
+    if (!mounted) return;
+    setState(() {
+      _controller.text = conversation?.rascunho ?? '';
+      _draftLoaded = true;
+    });
+  }
+
+  /// RF02.1 — autosave com debounce a cada pausa de digitação.
+  void _onDraftChanged(String value) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 400), () {
+      ref
+          .read(conversationRepositoryProvider)
+          .saveDraft(widget.conversationId, value);
+    });
+  }
+
+  /// RF02.2 — confirmação de envio (botão de enviar).
+  Future<void> _send() async {
+    if (_controller.text.trim().isEmpty) return;
+
+    // Cancela o debounce pendente e garante que o texto mais recente esteja
+    // salvo como rascunho antes de confirmar o envio, para não correr risco
+    // de enviar uma versão um pouco desatualizada do que foi digitado.
+    _debounce?.cancel();
+    await ref
+        .read(conversationRepositoryProvider)
+        .saveDraft(widget.conversationId, _controller.text);
+    await ref.read(conversationRepositoryProvider).sendDraft(widget.conversationId);
+
+    _controller.clear();
+    _scrollToBottomOnNextFrame();
+  }
+
+  void _scrollToBottomOnNextFrame() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) return;
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    // RF02.1 — garante que o rascunho não se perde ao sair da tela, mesmo
+    // sem o usuário ter confirmado o envio (fechar o app, apertar "voltar").
+    if (_draftLoaded) {
+      ref
+          .read(conversationRepositoryProvider)
+          .saveDraft(widget.conversationId, _controller.text);
+    }
+    _controller.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  /// RF02.4 / RF03 — reescreve o conteúdo sem alterar a data original.
+  Future<void> _editMessage(Message message) async {
+    final controller = TextEditingController(text: message.conteudoTexto ?? '');
+    final newContent = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Editar mensagem'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLines: null,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: const Text('Salvar'),
+          ),
+        ],
+      ),
+    );
+    if (newContent == null || newContent.isEmpty || !mounted) return;
+    await ref
+        .read(conversationRepositoryProvider)
+        .updateMessageContent(message.id, newContent);
+  }
+
+  /// RF02.6 / RF03 — sobrescrita manual da data, independente do fluxo
+  /// automático.
+  Future<void> _editDate(Message message) async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: message.data,
+      firstDate: DateTime(2000),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+    if (picked == null || !mounted) return;
+    await ref
+        .read(conversationRepositoryProvider)
+        .setMessageDateManually(message.id, picked);
+  }
+
+  /// RF02.5 — exclusão explícita, distinta de qualquer edição de conteúdo.
+  Future<void> _deleteMessage(Message message) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Excluir mensagem?'),
+        content: const Text('Essa ação não pode ser desfeita.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Excluir'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    await ref.read(conversationRepositoryProvider).deleteMessage(message.id);
+  }
+
+  void _showMessageActions(Message message) {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.edit_outlined),
+              title: const Text('Editar texto'),
+              onTap: () {
+                Navigator.pop(context);
+                _editMessage(message);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.event_outlined),
+              title: const Text('Editar data'),
+              onTap: () {
+                Navigator.pop(context);
+                _editDate(message);
+              },
+            ),
+            // Ponto de extensão da Sprint 3 (RF04): "Definir tag" entra
+            // aqui como mais um ListTile, além do gesto de arrastar.
+            ListTile(
+              leading: const Icon(Icons.delete_outline),
+              title: const Text('Excluir'),
+              onTap: () {
+                Navigator.pop(context);
+                _deleteMessage(message);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  bool _isSameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+
+  @override
+  Widget build(BuildContext context) {
     final conversationAsync =
-        ref.watch(conversationByIdProvider(conversationId));
+        ref.watch(conversationByIdProvider(widget.conversationId));
+    final messagesAsync = ref.watch(messagesStreamProvider(widget.conversationId));
+
+    // Rola pro fim quando uma mensagem nova chega, sem brigar com o scroll
+    // manual do usuário revendo mensagens antigas (só dispara quando a
+    // contagem cresce).
+    messagesAsync.whenData((messages) {
+      if (messages.length > _lastMessageCount) {
+        _scrollToBottomOnNextFrame();
+      }
+      _lastMessageCount = messages.length;
+    });
 
     return Scaffold(
       appBar: AppBar(
@@ -28,14 +232,132 @@ class ChatScreen extends ConsumerWidget {
           error: (_, __) => const Text('Erro'),
         ),
       ),
-      body: const Center(
-        child: Padding(
-          padding: EdgeInsets.all(24),
-          child: Text(
-            'As mensagens desta conversa chegam na Sprint 1\n'
-            '(editor de chat, rascunho persistente e envio — RF02).',
-            textAlign: TextAlign.center,
+      body: Column(
+        children: [
+          Expanded(
+            child: messagesAsync.when(
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (e, _) => Center(child: Text('Erro: $e')),
+              data: (messages) {
+                if (messages.isEmpty) {
+                  return const Center(
+                    child: Text('Nenhuma mensagem ainda. Escreva algo abaixo.'),
+                  );
+                }
+                return ListView.builder(
+                  controller: _scrollController,
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+                  itemCount: messages.length,
+                  itemBuilder: (context, index) {
+                    final message = messages[index];
+                    final previous = index > 0 ? messages[index - 1] : null;
+                    final showDateSeparator =
+                        previous == null || !_isSameDay(previous.data, message.data);
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (showDateSeparator) _DateSeparator(date: message.data),
+                        MessageBubble(
+                          message: message,
+                          onTap: () => _editMessage(message),
+                          onLongPress: () => _showMessageActions(message),
+                        ),
+                      ],
+                    );
+                  },
+                );
+              },
+            ),
           ),
+          _Composer(
+            controller: _controller,
+            enabled: _draftLoaded,
+            onChanged: _onDraftChanged,
+            onSend: _send,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DateSeparator extends StatelessWidget {
+  final DateTime date;
+  const _DateSeparator({required this.date});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Text(
+            _formatDate(date),
+            style: Theme.of(context).textTheme.labelSmall,
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _formatDate(DateTime date) {
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${two(date.day)}/${two(date.month)}/${date.year}';
+  }
+}
+
+class _Composer extends StatelessWidget {
+  final TextEditingController controller;
+  final bool enabled;
+  final ValueChanged<String> onChanged;
+  final VoidCallback onSend;
+
+  const _Composer({
+    required this.controller,
+    required this.enabled,
+    required this.onChanged,
+    required this.onSend,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            // Ponto de extensão da Sprint 2 (RF02.3): botão de anexo entra
+            // aqui, à esquerda do campo de texto.
+            Expanded(
+              child: TextField(
+                controller: controller,
+                enabled: enabled,
+                minLines: 1,
+                maxLines: 6,
+                textInputAction: TextInputAction.newline,
+                decoration: const InputDecoration(
+                  hintText: 'Escreva algo...',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.all(Radius.circular(20)),
+                  ),
+                  contentPadding:
+                      EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                ),
+                onChanged: onChanged,
+              ),
+            ),
+            const SizedBox(width: 8),
+            IconButton.filled(
+              onPressed: enabled ? onSend : null,
+              icon: const Icon(Icons.send),
+            ),
+          ],
         ),
       ),
     );
