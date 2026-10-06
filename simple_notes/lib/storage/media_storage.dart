@@ -76,6 +76,7 @@ class MediaStorage {
   Future<void> delete(String relativePath) async {
     final file = await resolve(relativePath);
     if (await file.exists()) await file.delete();
+    await deleteThumbnail(relativePath);
   }
 
   /// Apaga a pasta inteira de mídia de uma Conversa (usado ao excluí-la).
@@ -83,11 +84,34 @@ class MediaStorage {
     final dir = Directory(
       await _absolute(p.join(_rootFolder, conversationId)),
     );
-    if (await dir.exists()) await dir.delete(recursive: true);
+    if (await dir.exists()) {
+      await for (final entity in dir.list()) {
+        if (entity is File) {
+          await deleteThumbnail(p.join(_rootFolder, conversationId, p.basename(entity.path)));
+        }
+      }
+      await dir.delete(recursive: true);
+    }
   }
 
   Future<String> _absolute(String relativePath) async {
     final base = await _baseDirProvider();
     return p.join(base.path, relativePath);
   }
+
+  /// Pasta de cache de thumbnails de vídeo (recriável, pode ser apagada).
+  Future<File> thumbnailFileFor(String relativePath) async {
+    final base = await _baseDirProvider();
+    final name = p.basenameWithoutExtension(relativePath);
+    final dir = Directory(p.join(base.path, 'media_thumbs'));
+    if (!await dir.exists()) await dir.create(recursive: true);
+    return File(p.join(dir.path, '$name.jpg'));
+  }
+
+  /// Apaga o thumbnail de um arquivo (se existir).
+  Future<void> deleteThumbnail(String relativePath) async {
+    final f = await thumbnailFileFor(relativePath);
+    if (await f.exists()) await f.delete();
+  }
+
 }

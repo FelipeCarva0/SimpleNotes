@@ -184,6 +184,22 @@ class AttachmentService {
     await _recorder.dispose();
   }
 
+  /// Escolhe um arquivo do MESMO tipo da mensagem (usado em "Substituir").
+  Future<PickedAttachment?> pickForReplace(MessageType tipo) async {
+    switch (tipo) {
+      case MessageType.imagem:
+        return pickImageFromGallery();
+      case MessageType.video:
+        return pickVideoFromGallery();
+      case MessageType.audio:
+        return _pickWithFilePicker(FileType.audio, forceType: MessageType.audio);
+      case MessageType.documento:
+        return _pickWithFilePicker(FileType.any, forceType: MessageType.documento);
+      case MessageType.texto:
+        return null;
+    }
+  }
+
   // ----------------------------------------------------------------
   // Utilitários
   // ----------------------------------------------------------------

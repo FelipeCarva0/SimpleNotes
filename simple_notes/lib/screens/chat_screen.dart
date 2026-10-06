@@ -132,6 +132,58 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     return null;
   }
 
+  /// RF02.4: renomeia só o nome de exibição; data intocada.
+  Future<void> _renameAttachment(Message message) async {
+    final controller =
+        TextEditingController(text: message.arquivoNomeExibicao ?? '');
+    final newName = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Renomear arquivo'),
+        content: TextField(controller: controller, autofocus: true),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: const Text('Salvar'),
+          ),
+        ],
+      ),
+    );
+    if (newName == null || newName.isEmpty || !mounted) return;
+    await ref
+        .read(conversationRepositoryProvider)
+        .renameAttachment(message.id, newName);
+  }
+
+  /// RF02.4: troca o arquivo físico mantendo data, posição e tipo.
+  Future<void> _replaceAttachment(Message message) async {
+    if (_sendingAttachment) return;
+    final service = ref.read(attachmentServiceProvider);
+
+    try {
+      final picked = await service.pickForReplace(message.tipo);
+      if (picked == null || !mounted) return; // cancelado
+
+      setState(() => _sendingAttachment = true);
+      await ref.read(conversationRepositoryProvider).replaceAttachmentFile(
+            messageId: message.id,
+            newFile: picked.file,
+            nomeOriginal: picked.nomeOriginal,
+          );
+    } on AttachmentPermissionException catch (e) {
+      _showSnack(e.message);
+    } catch (e) {
+      _showSnack('Não foi possível substituir o arquivo.');
+      debugPrint('Erro ao substituir: $e');
+    } finally {
+      if (mounted) setState(() => _sendingAttachment = false);
+    }
+  }
+
   Future<void> _sendPicked(PickedAttachment picked) async {
     setState(() => _sendingAttachment = true);
     try {
@@ -167,6 +219,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       );
     });
   }
+
 
   @override
   void dispose() {
@@ -257,14 +310,37 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       builder: (context) => SafeArea(
         child: Wrap(
           children: [
-            ListTile(
-              leading: const Icon(Icons.edit_outlined),
-              title: const Text('Editar texto'),
-              onTap: () {
-                Navigator.pop(context);
-                _editMessage(message);
-              },
-            ),
+            // Só para mensagens de texto
+            if (message.tipo == MessageType.texto)
+              ListTile(
+                leading: const Icon(Icons.edit_outlined),
+                title: const Text('Editar texto'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _editMessage(message);
+                },
+              ),
+
+            // Só para anexos (imagem, vídeo, áudio, documento)
+            if (message.tipo != MessageType.texto) ...[
+              ListTile(
+                leading: const Icon(Icons.drive_file_rename_outline),
+                title: const Text('Renomear arquivo'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _renameAttachment(message);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.swap_horiz),
+                title: const Text('Substituir arquivo'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _replaceAttachment(message);
+                },
+              ),
+            ],
+
             ListTile(
               leading: const Icon(Icons.event_outlined),
               title: const Text('Editar data'),
