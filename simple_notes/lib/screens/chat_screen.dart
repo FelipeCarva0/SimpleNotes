@@ -4,6 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/message.dart';
 import '../providers/conversation_providers.dart';
 import '../widgets/message_bubble.dart';
+import '../services/attachment_service.dart';
+import '../widgets/attachment_picker_sheet.dart';
+import '../widgets/audio_recorder_dialog.dart';
+import '../database/tables.dart' show MessageType;
 
 /// Tela de chat de uma Conversa (RF01, RF02, RF03) — Sprint 1: só mensagens
 /// de texto. Anexos de arquivo (RF02.3) entram na Sprint 2 e o gesto de
@@ -27,6 +31,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   // que o dispose() sobrescreva um rascunho existente com string vazia caso
   // o usuário saia da tela antes do carregamento inicial terminar.
   bool _draftLoaded = false;
+  bool _sendingAttachment = false;
   int _lastMessageCount = 0;
 
   @override
@@ -73,6 +78,85 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     _scrollToBottomOnNextFrame();
   }
 
+
+  /// RF02.3 — abre o sheet, executa a ação escolhida e envia o anexo.
+  Future<void> _onAttachPressed() async {
+    if (_sendingAttachment) return;
+
+    final action = await showAttachmentPickerSheet(context);
+    if (action == null || !mounted) return;
+
+    final service = ref.read(attachmentServiceProvider);
+
+    try {
+      PickedAttachment? picked;
+      switch (action) {
+        case AttachmentAction.camera:
+          picked = await service.takePhoto();
+        case AttachmentAction.gallery:
+          picked = await service.pickImageFromGallery();
+        case AttachmentAction.video:
+          picked = await service.recordVideo();
+        case AttachmentAction.videoGallery:
+          picked = await service.pickVideoFromGallery();
+        case AttachmentAction.audioFile:
+          picked = await service.pickAudioFile();
+        case AttachmentAction.document:
+          picked = await service.pickDocument();
+        case AttachmentAction.audioRecord:
+          picked = await _recordAudio(service);
+      }
+
+      if (picked == null || !mounted) return; // cancelado: sem erro
+
+      await _sendPicked(picked);
+    } on AttachmentPermissionException catch (e) {
+      _showSnack(e.message);
+    } catch (e) {
+      _showSnack('Não foi possível anexar o arquivo.');
+      debugPrint('Erro ao anexar: $e');
+    }
+  }
+
+  Future<PickedAttachment?> _recordAudio(AttachmentService service) async {
+    await service.startRecording(); // pode lançar permissão negada
+    if (!mounted) {
+      await service.cancelRecording();
+      return null;
+    }
+    final send = await showAudioRecorderDialog(context);
+    if (send == true) {
+      return service.stopRecording();
+    }
+    await service.cancelRecording();
+    return null;
+  }
+
+  Future<void> _sendPicked(PickedAttachment picked) async {
+    setState(() => _sendingAttachment = true);
+    try {
+      await ref.read(conversationRepositoryProvider).sendAttachment(
+            conversationId: widget.conversationId,
+            tipo: picked.tipo,
+            file: picked.file,
+            nomeOriginal: picked.nomeOriginal,
+          );
+      _scrollToBottomOnNextFrame();
+    } finally {
+      // Apaga o temporário (gravação) já copiado para o storage do app.
+      if (picked.isTemporary && await picked.file.exists()) {
+        await picked.file.delete();
+      }
+      if (mounted) setState(() => _sendingAttachment = false);
+    }
+  }
+
+  void _showSnack(String text) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(text)));
+  }
   void _scrollToBottomOnNextFrame() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_scrollController.hasClients) return;
@@ -229,7 +313,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         title: conversationAsync.when(
           data: (c) => Text(c?.titulo ?? ''),
           loading: () => const Text(''),
-          error: (_, __) => const Text('Erro'),
+          error: (_, _) => const Text('Erro'),
         ),
       ),
       body: Column(
@@ -259,7 +343,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                         if (showDateSeparator) _DateSeparator(date: message.data),
                         MessageBubble(
                           message: message,
-                          onTap: () => _editMessage(message),
+                          onTap: message.tipo == MessageType.texto
+                              ? () => _editMessage(message)
+                              : null,
                           onLongPress: () => _showMessageActions(message),
                         ),
                       ],
@@ -269,11 +355,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               },
             ),
           ),
+          if (_sendingAttachment) const LinearProgressIndicator(),
           _Composer(
             controller: _controller,
             enabled: _draftLoaded,
             onChanged: _onDraftChanged,
             onSend: _send,
+            onAttach: _sendingAttachment ? null : _onAttachPressed,
           ),
         ],
       ),
@@ -316,12 +404,14 @@ class _Composer extends StatelessWidget {
   final bool enabled;
   final ValueChanged<String> onChanged;
   final VoidCallback onSend;
+  final VoidCallback? onAttach;
 
   const _Composer({
     required this.controller,
     required this.enabled,
     required this.onChanged,
     required this.onSend,
+    required this.onAttach,
   });
 
   @override
@@ -332,8 +422,11 @@ class _Composer extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            // Ponto de extensão da Sprint 2 (RF02.3): botão de anexo entra
-            // aqui, à esquerda do campo de texto.
+            IconButton(
+              onPressed: enabled ? onAttach : null,
+              icon: const Icon(Icons.attach_file),
+              tooltip: 'Anexar',
+            ),
             Expanded(
               child: TextField(
                 controller: controller,

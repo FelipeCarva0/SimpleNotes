@@ -4,6 +4,8 @@ import '../database/app_database.dart';
 import '../database/tables.dart' show MessageType;
 import '../models/conversation.dart';
 import '../models/message.dart';
+import 'dart:io';
+import '../storage/media_storage.dart';
 
 /// Cobre o CRUD de Conversa (RF01, Sprint 0) e, a partir da Sprint 1, as
 /// operações sobre Mensagem de texto (RF02, RF03). Anexos de arquivo
@@ -11,9 +13,10 @@ import '../models/message.dart';
 /// ambas reaproveitando esta mesma instância de [AppDatabase].
 class ConversationRepository {
   final AppDatabase db;
+  final MediaStorage storage;
   final _uuid = const Uuid();
 
-  ConversationRepository(this.db);
+  ConversationRepository(this.db, this.storage);
 
   // ---------------------------------------------------------------------
   // Conversa (RF01) — inalterado desde a Sprint 0
@@ -60,11 +63,14 @@ class ConversationRepository {
     );
   }
 
-  /// Exclui a Conversa e, em cascata, suas Mensagens.
+  /// Exclui a Conversa, suas Mensagens e a pasta de mídia no filesystem.
   Future<void> delete(String id) async {
-    await (db.delete(db.messages)..where((m) => m.conversationId.equals(id)))
-        .go();
-    await (db.delete(db.conversations)..where((c) => c.id.equals(id))).go();
+    await db.transaction(() async {
+      await (db.delete(db.messages)..where((m) => m.conversationId.equals(id)))
+          .go();
+      await (db.delete(db.conversations)..where((c) => c.id.equals(id))).go();
+    });
+    await storage.deleteConversationFolder(id);
   }
 
   Conversation _toModel(ConversationRow row) => Conversation(
@@ -154,7 +160,15 @@ class ConversationRepository {
 
   /// RF02.5 — exclusão explícita e distinta de qualquer edição de conteúdo.
   Future<void> deleteMessage(String messageId) async {
+    final row = await (db.select(db.messages)
+          ..where((m) => m.id.equals(messageId)))
+        .getSingleOrNull();
+    if (row == null) return;
+
     await (db.delete(db.messages)..where((m) => m.id.equals(messageId))).go();
+
+    final path = row.arquivoPath;
+    if (path != null) await storage.delete(path);
   }
 
   /// RF02.6 / RF03 — sobrescrita manual da data de qualquer Mensagem, a
@@ -192,4 +206,91 @@ class ConversationRepository {
         data: row.data,
         dataEditadaManualmente: row.dataEditadaManualmente,
       );
+
+      // ---------------------------------------------------------------------
+      // Mensagem — anexos (RF02.3, RF02.4, RF02.5) — Sprint 2
+      // ---------------------------------------------------------------------
+
+      /// RF02.3 — copia o arquivo para o storage e cria uma Mensagem de anexo
+      /// com a data de hoje. Se o banco falhar, remove o arquivo copiado para
+      /// não deixar órfão.
+      Future<void> sendAttachment({
+        required String conversationId,
+        required MessageType tipo,
+        required File file,
+        required String nomeOriginal,
+      }) async {
+        assert(tipo != MessageType.texto, 'Use sendDraft para texto');
+
+        final stored = await storage.saveFile(file, conversationId);
+
+        try {
+          final now = DateTime.now();
+          final today = DateTime(now.year, now.month, now.day);
+
+          await db.transaction(() async {
+            final position = await _nextPosition(conversationId);
+
+            await db.into(db.messages).insert(
+                  MessagesCompanion.insert(
+                    id: _uuid.v4(),
+                    conversationId: conversationId,
+                    position: position,
+                    tipo: Value(tipo),
+                    arquivoPath: Value(stored.relativePath),
+                    arquivoNomeOriginal: Value(nomeOriginal),
+                    arquivoNomeExibicao: Value(nomeOriginal),
+                    arquivoMimeType: Value(stored.mimeType),
+                    arquivoTamanhoBytes: Value(stored.sizeBytes),
+                    data: today,
+                  ),
+                );
+
+            await (db.update(db.conversations)
+                  ..where((c) => c.id.equals(conversationId)))
+                .write(ConversationsCompanion(atualizadoEm: Value(now)));
+          });
+        } catch (_) {
+          await storage.delete(stored.relativePath);
+          rethrow;
+        }
+      }
+
+      /// RF02.4 — altera só o nome de exibição; `data` intocada.
+      Future<void> renameAttachment(String messageId, String novoNome) async {
+        await (db.update(db.messages)..where((m) => m.id.equals(messageId)))
+            .write(MessagesCompanion(arquivoNomeExibicao: Value(novoNome)));
+      }
+
+      /// RF02.4 — troca o arquivo físico mantendo id, posição, tag, tipo, nome de
+      /// exibição e `data`. O arquivo antigo só é apagado depois que o banco
+      /// aceitou a atualização.
+      Future<void> replaceAttachmentFile({
+        required String messageId,
+        required File newFile,
+        required String nomeOriginal,
+      }) async {
+        final row = await (db.select(db.messages)
+              ..where((m) => m.id.equals(messageId)))
+            .getSingle();
+
+        final stored = await storage.saveFile(newFile, row.conversationId);
+
+        try {
+          await (db.update(db.messages)..where((m) => m.id.equals(messageId))).write(
+            MessagesCompanion(
+              arquivoPath: Value(stored.relativePath),
+              arquivoNomeOriginal: Value(nomeOriginal),
+              arquivoMimeType: Value(stored.mimeType),
+              arquivoTamanhoBytes: Value(stored.sizeBytes),
+            ),
+          );
+        } catch (_) {
+          await storage.delete(stored.relativePath);
+          rethrow;
+        }
+
+        final oldPath = row.arquivoPath;
+        if (oldPath != null) await storage.delete(oldPath);
+      }
 }

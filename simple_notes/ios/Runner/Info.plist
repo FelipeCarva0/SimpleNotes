@@ -2,6 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSCameraUsageDescription</key>
+	<string>Usado para fotografar e gravar vídeos que serão arquivados na conversa.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Usado para gravar áudios e vídeos que serão arquivados na conversa.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Usado para escolher fotos e vídeos da galeria e arquivá-los na conversa.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>

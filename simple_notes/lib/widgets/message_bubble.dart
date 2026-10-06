@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/message.dart';
+import '../database/tables.dart' show MessageType;
 
 /// Balão de uma Mensagem de texto (RF01/RF02).
 ///
@@ -52,7 +53,9 @@ class MessageBubble extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                message.conteudoTexto ?? '',
+                message.tipo == MessageType.texto
+                    ? (message.conteudoTexto ?? '')
+                    : '📎 ${message.arquivoNomeExibicao ?? 'Arquivo'}',
                 style: TextStyle(color: scheme.onPrimaryContainer),
               ),
               // RF02.6 — indicador discreto de que a data foi sobrescrita
@@ -66,7 +69,7 @@ class MessageBubble extends StatelessWidget {
                     child: Icon(
                       Icons.edit_calendar_outlined,
                       size: 13,
-                      color: scheme.onPrimaryContainer.withOpacity(0.7),
+                      color: scheme.onPrimaryContainer.withValues(alpha: 0.7),
                     ),
                   ),
                 ),

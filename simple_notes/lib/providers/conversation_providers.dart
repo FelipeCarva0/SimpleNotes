@@ -3,12 +3,25 @@ import '../database/app_database.dart';
 import '../repositories/conversation_repository.dart';
 import '../models/conversation.dart';
 import '../models/message.dart';
+import '../storage/media_storage.dart';
+import '../services/attachment_service.dart';
 
 final appDatabaseProvider = Provider<AppDatabase>((ref) => AppDatabase());
 
+final mediaStorageProvider = Provider<MediaStorage>((ref) => MediaStorage());
+
 final conversationRepositoryProvider = Provider<ConversationRepository>(
-  (ref) => ConversationRepository(ref.watch(appDatabaseProvider)),
+  (ref) => ConversationRepository(
+    ref.watch(appDatabaseProvider),
+    ref.watch(mediaStorageProvider),
+  ),
 );
+
+final attachmentServiceProvider = Provider<AttachmentService>((ref) {
+  final service = AttachmentService();
+  ref.onDispose(service.dispose);
+  return service;
+});
 
 /// Lista da tela inicial (RF06), ordenada por atividade mais recente.
 final conversationsStreamProvider = StreamProvider<List<Conversation>>(

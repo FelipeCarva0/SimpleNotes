@@ -141,8 +141,7 @@ atravesse várias Conversas.
 
 ### RF06 — Tela inicial e busca de Conversa
 Ao abrir o aplicativo, a primeira tela exibe a lista de todas as Conversas
-existentes, cada uma identificada por título, com prévia da última
-mensagem/arquivo e sua data.
+existentes, cada uma identificada por título.
 
 **RF06.1 — Busca por nome da Conversa:** nesta tela, o usuário pode buscar
 Conversas pelo título. Essa é a **única forma de busca que atravessa
