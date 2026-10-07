@@ -125,6 +125,13 @@ ação de **definir a tag** dessa mensagem.
   nova selecionada (ou remove a tag, caso o usuário escolha "sem tag").
 - CRUD completo de Tag: criar, renomear, alterar cor e excluir (excluir uma
   Tag remove a tag das mensagens que a usavam, mas não as mensagens em si).
+- **Escopo por Conversa:** cada Tag pertence a **uma Conversa** e só é
+  visível e selecionável para as Mensagens dessa Conversa. Conversas não
+  têm acesso às Tags de outras Conversas. O nome é único dentro da
+  Conversa (normalizado em maiúsculas); o mesmo nome pode existir em
+  Conversas diferentes como Tags independentes. Excluir uma Conversa
+  exclui suas Tags.
+  
 
 ### RF05 — Busca e filtragem dentro da Conversa
 Dentro de uma Conversa aberta, o usuário pode localizar Mensagens por:
@@ -217,6 +224,7 @@ Mensagem (antiga Linha, generalizada)
 
 Tag
 - id
+- conversa_id (FK — a Tag pertence a uma Conversa)
 - nome
 - cor (hex)
 ```

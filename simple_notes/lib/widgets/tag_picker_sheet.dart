@@ -56,7 +56,7 @@ class _TagPickerSheet extends ConsumerWidget {
     List<Tag> existing,
   ) async {
     final messenger = ScaffoldMessenger.of(context);
-    final created = await showCreateTagDialog(context, ref);
+    final created = await showCreateTagDialog(context, ref, message.conversationId);
     if (created == null || !context.mounted) return;
 
     if (existing.any((t) => t.id == created.id)) {
@@ -71,7 +71,7 @@ class _TagPickerSheet extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final tagsAsync = ref.watch(tagsStreamProvider);
+    final tagsAsync = ref.watch(tagsStreamProvider(message.conversationId));
     final maxHeight = MediaQuery.of(context).size.height * 0.75;
 
     return SafeArea(

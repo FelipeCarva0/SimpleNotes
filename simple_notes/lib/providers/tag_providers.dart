@@ -10,8 +10,9 @@ final tagRepositoryProvider = Provider<TagRepository>(
 
 /// Todas as Tags, em ordem alfabética, atualizando ao vivo. A UI monta um
 /// `Map<String, Tag>` a partir dela para resolver a tag de cada mensagem.
-final tagsStreamProvider = StreamProvider<List<Tag>>(
-  (ref) => ref.watch(tagRepositoryProvider).watchAll(),
+final tagsStreamProvider = StreamProvider.family<List<Tag>, String>(
+  (ref, conversationId) =>
+      ref.watch(tagRepositoryProvider).watchByConversation(conversationId),
 );
 
 /// Quantas mensagens usam cada Tag (tagId -> contagem), ao vivo.

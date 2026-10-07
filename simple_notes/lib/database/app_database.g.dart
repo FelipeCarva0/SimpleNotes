@@ -539,6 +539,20 @@ class $TagsTable extends Tags with TableInfo<$TagsTable, TagRow> {
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _conversationIdMeta = const VerificationMeta(
+    'conversationId',
+  );
+  @override
+  late final GeneratedColumn<String> conversationId = GeneratedColumn<String>(
+    'conversation_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES conversations (id)',
+    ),
+  );
   static const VerificationMeta _nomeMeta = const VerificationMeta('nome');
   @override
   late final GeneratedColumn<String> nome = GeneratedColumn<String>(
@@ -558,7 +572,7 @@ class $TagsTable extends Tags with TableInfo<$TagsTable, TagRow> {
     requiredDuringInsert: true,
   );
   @override
-  List<GeneratedColumn> get $columns => [id, nome, cor];
+  List<GeneratedColumn> get $columns => [id, conversationId, nome, cor];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -575,6 +589,17 @@ class $TagsTable extends Tags with TableInfo<$TagsTable, TagRow> {
       context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
     } else if (isInserting) {
       context.missing(_idMeta);
+    }
+    if (data.containsKey('conversation_id')) {
+      context.handle(
+        _conversationIdMeta,
+        conversationId.isAcceptableOrUnknown(
+          data['conversation_id']!,
+          _conversationIdMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_conversationIdMeta);
     }
     if (data.containsKey('nome')) {
       context.handle(
@@ -605,6 +630,10 @@ class $TagsTable extends Tags with TableInfo<$TagsTable, TagRow> {
         DriftSqlType.string,
         data['${effectivePrefix}id'],
       )!,
+      conversationId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}conversation_id'],
+      )!,
       nome: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}nome'],
@@ -624,20 +653,32 @@ class $TagsTable extends Tags with TableInfo<$TagsTable, TagRow> {
 
 class TagRow extends DataClass implements Insertable<TagRow> {
   final String id;
+  final String conversationId;
   final String nome;
   final String cor;
-  const TagRow({required this.id, required this.nome, required this.cor});
+  const TagRow({
+    required this.id,
+    required this.conversationId,
+    required this.nome,
+    required this.cor,
+  });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['id'] = Variable<String>(id);
+    map['conversation_id'] = Variable<String>(conversationId);
     map['nome'] = Variable<String>(nome);
     map['cor'] = Variable<String>(cor);
     return map;
   }
 
   TagsCompanion toCompanion(bool nullToAbsent) {
-    return TagsCompanion(id: Value(id), nome: Value(nome), cor: Value(cor));
+    return TagsCompanion(
+      id: Value(id),
+      conversationId: Value(conversationId),
+      nome: Value(nome),
+      cor: Value(cor),
+    );
   }
 
   factory TagRow.fromJson(
@@ -647,6 +688,7 @@ class TagRow extends DataClass implements Insertable<TagRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return TagRow(
       id: serializer.fromJson<String>(json['id']),
+      conversationId: serializer.fromJson<String>(json['conversationId']),
       nome: serializer.fromJson<String>(json['nome']),
       cor: serializer.fromJson<String>(json['cor']),
     );
@@ -656,16 +698,29 @@ class TagRow extends DataClass implements Insertable<TagRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'id': serializer.toJson<String>(id),
+      'conversationId': serializer.toJson<String>(conversationId),
       'nome': serializer.toJson<String>(nome),
       'cor': serializer.toJson<String>(cor),
     };
   }
 
-  TagRow copyWith({String? id, String? nome, String? cor}) =>
-      TagRow(id: id ?? this.id, nome: nome ?? this.nome, cor: cor ?? this.cor);
+  TagRow copyWith({
+    String? id,
+    String? conversationId,
+    String? nome,
+    String? cor,
+  }) => TagRow(
+    id: id ?? this.id,
+    conversationId: conversationId ?? this.conversationId,
+    nome: nome ?? this.nome,
+    cor: cor ?? this.cor,
+  );
   TagRow copyWithCompanion(TagsCompanion data) {
     return TagRow(
       id: data.id.present ? data.id.value : this.id,
+      conversationId: data.conversationId.present
+          ? data.conversationId.value
+          : this.conversationId,
       nome: data.nome.present ? data.nome.value : this.nome,
       cor: data.cor.present ? data.cor.value : this.cor,
     );
@@ -675,6 +730,7 @@ class TagRow extends DataClass implements Insertable<TagRow> {
   String toString() {
     return (StringBuffer('TagRow(')
           ..write('id: $id, ')
+          ..write('conversationId: $conversationId, ')
           ..write('nome: $nome, ')
           ..write('cor: $cor')
           ..write(')'))
@@ -682,43 +738,50 @@ class TagRow extends DataClass implements Insertable<TagRow> {
   }
 
   @override
-  int get hashCode => Object.hash(id, nome, cor);
+  int get hashCode => Object.hash(id, conversationId, nome, cor);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is TagRow &&
           other.id == this.id &&
+          other.conversationId == this.conversationId &&
           other.nome == this.nome &&
           other.cor == this.cor);
 }
 
 class TagsCompanion extends UpdateCompanion<TagRow> {
   final Value<String> id;
+  final Value<String> conversationId;
   final Value<String> nome;
   final Value<String> cor;
   final Value<int> rowid;
   const TagsCompanion({
     this.id = const Value.absent(),
+    this.conversationId = const Value.absent(),
     this.nome = const Value.absent(),
     this.cor = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   TagsCompanion.insert({
     required String id,
+    required String conversationId,
     required String nome,
     required String cor,
     this.rowid = const Value.absent(),
   }) : id = Value(id),
+       conversationId = Value(conversationId),
        nome = Value(nome),
        cor = Value(cor);
   static Insertable<TagRow> custom({
     Expression<String>? id,
+    Expression<String>? conversationId,
     Expression<String>? nome,
     Expression<String>? cor,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
+      if (conversationId != null) 'conversation_id': conversationId,
       if (nome != null) 'nome': nome,
       if (cor != null) 'cor': cor,
       if (rowid != null) 'rowid': rowid,
@@ -727,12 +790,14 @@ class TagsCompanion extends UpdateCompanion<TagRow> {
 
   TagsCompanion copyWith({
     Value<String>? id,
+    Value<String>? conversationId,
     Value<String>? nome,
     Value<String>? cor,
     Value<int>? rowid,
   }) {
     return TagsCompanion(
       id: id ?? this.id,
+      conversationId: conversationId ?? this.conversationId,
       nome: nome ?? this.nome,
       cor: cor ?? this.cor,
       rowid: rowid ?? this.rowid,
@@ -744,6 +809,9 @@ class TagsCompanion extends UpdateCompanion<TagRow> {
     final map = <String, Expression>{};
     if (id.present) {
       map['id'] = Variable<String>(id.value);
+    }
+    if (conversationId.present) {
+      map['conversation_id'] = Variable<String>(conversationId.value);
     }
     if (nome.present) {
       map['nome'] = Variable<String>(nome.value);
@@ -761,6 +829,7 @@ class TagsCompanion extends UpdateCompanion<TagRow> {
   String toString() {
     return (StringBuffer('TagsCompanion(')
           ..write('id: $id, ')
+          ..write('conversationId: $conversationId, ')
           ..write('nome: $nome, ')
           ..write('cor: $cor, ')
           ..write('rowid: $rowid')
@@ -1670,6 +1739,25 @@ final class $$ConversationsTableReferences
     super.$_typedResult,
   );
 
+  static MultiTypedResultKey<$TagsTable, List<TagRow>> _tagsRefsTable(
+    _$AppDatabase db,
+  ) => MultiTypedResultKey.fromTable(
+    db.tags,
+    aliasName: 'conversations__id__tags__conversation_id',
+  );
+
+  $$TagsTableProcessedTableManager get tagsRefs {
+    final manager = $$TagsTableTableManager(
+      $_db,
+      $_db.tags,
+    ).filter((f) => f.conversationId.id.sqlEquals($_itemColumn<String>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_tagsRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+
   static MultiTypedResultKey<$MessagesTable, List<MessageRow>>
   _messagesRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
     db.messages,
@@ -1737,6 +1825,31 @@ class $$ConversationsTableFilterComposer
     column: $table.rascunho,
     builder: (column) => ColumnFilters(column),
   );
+
+  Expression<bool> tagsRefs(
+    Expression<bool> Function($$TagsTableFilterComposer f) f,
+  ) {
+    final $$TagsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.tags,
+      getReferencedColumn: (t) => t.conversationId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TagsTableFilterComposer(
+            $db: $db,
+            $table: $db.tags,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
 
   Expression<bool> messagesRefs(
     Expression<bool> Function($$MessagesTableFilterComposer f) f,
@@ -1851,6 +1964,31 @@ class $$ConversationsTableAnnotationComposer
   GeneratedColumn<String> get rascunho =>
       $composableBuilder(column: $table.rascunho, builder: (column) => column);
 
+  Expression<T> tagsRefs<T extends Object>(
+    Expression<T> Function($$TagsTableAnnotationComposer a) f,
+  ) {
+    final $$TagsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.tags,
+      getReferencedColumn: (t) => t.conversationId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$TagsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.tags,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+
   Expression<T> messagesRefs<T extends Object>(
     Expression<T> Function($$MessagesTableAnnotationComposer a) f,
   ) {
@@ -1890,7 +2028,7 @@ class $$ConversationsTableTableManager
           $$ConversationsTableUpdateCompanionBuilder,
           (ConversationRow, $$ConversationsTableReferences),
           ConversationRow,
-          PrefetchHooks Function({bool messagesRefs})
+          PrefetchHooks Function({bool tagsRefs, bool messagesRefs})
         > {
   $$ConversationsTableTableManager(_$AppDatabase db, $ConversationsTable table)
     : super(
@@ -1955,13 +2093,37 @@ class $$ConversationsTableTableManager
                 ),
               )
               .toList(),
-          prefetchHooksCallback: ({messagesRefs = false}) {
+          prefetchHooksCallback: ({tagsRefs = false, messagesRefs = false}) {
             return PrefetchHooks(
               db: db,
-              explicitlyWatchedTables: [if (messagesRefs) db.messages],
+              explicitlyWatchedTables: [
+                if (tagsRefs) db.tags,
+                if (messagesRefs) db.messages,
+              ],
               addJoins: null,
               getPrefetchedDataCallback: (items) async {
                 return [
+                  if (tagsRefs)
+                    await $_getPrefetchedData<
+                      ConversationRow,
+                      $ConversationsTable,
+                      TagRow
+                    >(
+                      currentTable: table,
+                      referencedTable: $$ConversationsTableReferences
+                          ._tagsRefsTable(db),
+                      managerFromTypedResult: (p0) =>
+                          $$ConversationsTableReferences(
+                            db,
+                            table,
+                            p0,
+                          ).tagsRefs,
+                      referencedItemsForCurrentItem: (item, referencedItems) =>
+                          referencedItems.where(
+                            (e) => e.conversationId == item.id,
+                          ),
+                      typedResults: items,
+                    ),
                   if (messagesRefs)
                     await $_getPrefetchedData<
                       ConversationRow,
@@ -2003,11 +2165,12 @@ typedef $$ConversationsTableProcessedTableManager =
       $$ConversationsTableUpdateCompanionBuilder,
       (ConversationRow, $$ConversationsTableReferences),
       ConversationRow,
-      PrefetchHooks Function({bool messagesRefs})
+      PrefetchHooks Function({bool tagsRefs, bool messagesRefs})
     >;
 typedef $$TagsTableCreateCompanionBuilder =
     TagsCompanion Function({
       required String id,
+      required String conversationId,
       required String nome,
       required String cor,
       Value<int> rowid,
@@ -2015,6 +2178,7 @@ typedef $$TagsTableCreateCompanionBuilder =
 typedef $$TagsTableUpdateCompanionBuilder =
     TagsCompanion Function({
       Value<String> id,
+      Value<String> conversationId,
       Value<String> nome,
       Value<String> cor,
       Value<int> rowid,
@@ -2023,6 +2187,23 @@ typedef $$TagsTableUpdateCompanionBuilder =
 final class $$TagsTableReferences
     extends BaseReferences<_$AppDatabase, $TagsTable, TagRow> {
   $$TagsTableReferences(super.$_db, super.$_table, super.$_typedResult);
+
+  static $ConversationsTable _conversationIdTable(_$AppDatabase db) =>
+      db.conversations.createAlias('tags__conversation_id__conversations__id');
+
+  $$ConversationsTableProcessedTableManager get conversationId {
+    final $_column = $_itemColumn<String>('conversation_id')!;
+
+    final manager = $$ConversationsTableTableManager(
+      $_db,
+      $_db.conversations,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_conversationIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
 
   static MultiTypedResultKey<$MessagesTable, List<MessageRow>>
   _messagesRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
@@ -2065,6 +2246,29 @@ class $$TagsTableFilterComposer extends Composer<_$AppDatabase, $TagsTable> {
     column: $table.cor,
     builder: (column) => ColumnFilters(column),
   );
+
+  $$ConversationsTableFilterComposer get conversationId {
+    final $$ConversationsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.conversationId,
+      referencedTable: $db.conversations,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ConversationsTableFilterComposer(
+            $db: $db,
+            $table: $db.conversations,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 
   Expression<bool> messagesRefs(
     Expression<bool> Function($$MessagesTableFilterComposer f) f,
@@ -2114,6 +2318,29 @@ class $$TagsTableOrderingComposer extends Composer<_$AppDatabase, $TagsTable> {
     column: $table.cor,
     builder: (column) => ColumnOrderings(column),
   );
+
+  $$ConversationsTableOrderingComposer get conversationId {
+    final $$ConversationsTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.conversationId,
+      referencedTable: $db.conversations,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ConversationsTableOrderingComposer(
+            $db: $db,
+            $table: $db.conversations,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 }
 
 class $$TagsTableAnnotationComposer
@@ -2133,6 +2360,29 @@ class $$TagsTableAnnotationComposer
 
   GeneratedColumn<String> get cor =>
       $composableBuilder(column: $table.cor, builder: (column) => column);
+
+  $$ConversationsTableAnnotationComposer get conversationId {
+    final $$ConversationsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.conversationId,
+      referencedTable: $db.conversations,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ConversationsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.conversations,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 
   Expression<T> messagesRefs<T extends Object>(
     Expression<T> Function($$MessagesTableAnnotationComposer a) f,
@@ -2173,7 +2423,7 @@ class $$TagsTableTableManager
           $$TagsTableUpdateCompanionBuilder,
           (TagRow, $$TagsTableReferences),
           TagRow,
-          PrefetchHooks Function({bool messagesRefs})
+          PrefetchHooks Function({bool conversationId, bool messagesRefs})
         > {
   $$TagsTableTableManager(_$AppDatabase db, $TagsTable table)
     : super(
@@ -2189,18 +2439,27 @@ class $$TagsTableTableManager
           updateCompanionCallback:
               ({
                 Value<String> id = const Value.absent(),
+                Value<String> conversationId = const Value.absent(),
                 Value<String> nome = const Value.absent(),
                 Value<String> cor = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
-              }) => TagsCompanion(id: id, nome: nome, cor: cor, rowid: rowid),
+              }) => TagsCompanion(
+                id: id,
+                conversationId: conversationId,
+                nome: nome,
+                cor: cor,
+                rowid: rowid,
+              ),
           createCompanionCallback:
               ({
                 required String id,
+                required String conversationId,
                 required String nome,
                 required String cor,
                 Value<int> rowid = const Value.absent(),
               }) => TagsCompanion.insert(
                 id: id,
+                conversationId: conversationId,
                 nome: nome,
                 cor: cor,
                 rowid: rowid,
@@ -2211,29 +2470,66 @@ class $$TagsTableTableManager
                     (e.readTable(table), $$TagsTableReferences(db, table, e)),
               )
               .toList(),
-          prefetchHooksCallback: ({messagesRefs = false}) {
-            return PrefetchHooks(
-              db: db,
-              explicitlyWatchedTables: [if (messagesRefs) db.messages],
-              addJoins: null,
-              getPrefetchedDataCallback: (items) async {
-                return [
-                  if (messagesRefs)
-                    await $_getPrefetchedData<TagRow, $TagsTable, MessageRow>(
-                      currentTable: table,
-                      referencedTable: $$TagsTableReferences._messagesRefsTable(
-                        db,
-                      ),
-                      managerFromTypedResult: (p0) =>
-                          $$TagsTableReferences(db, table, p0).messagesRefs,
-                      referencedItemsForCurrentItem: (item, referencedItems) =>
-                          referencedItems.where((e) => e.tagId == item.id),
-                      typedResults: items,
-                    ),
-                ];
+          prefetchHooksCallback:
+              ({conversationId = false, messagesRefs = false}) {
+                return PrefetchHooks(
+                  db: db,
+                  explicitlyWatchedTables: [if (messagesRefs) db.messages],
+                  addJoins:
+                      <
+                        T extends TableManagerState<
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic
+                        >
+                      >(state) {
+                        if (conversationId) {
+                          state =
+                              state.withJoin(
+                                    currentTable: table,
+                                    currentColumn: table.conversationId,
+                                    referencedTable: $$TagsTableReferences
+                                        ._conversationIdTable(db),
+                                    referencedColumn: $$TagsTableReferences
+                                        ._conversationIdTable(db)
+                                        .id,
+                                  )
+                                  as T;
+                        }
+
+                        return state;
+                      },
+                  getPrefetchedDataCallback: (items) async {
+                    return [
+                      if (messagesRefs)
+                        await $_getPrefetchedData<
+                          TagRow,
+                          $TagsTable,
+                          MessageRow
+                        >(
+                          currentTable: table,
+                          referencedTable: $$TagsTableReferences
+                              ._messagesRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$TagsTableReferences(db, table, p0).messagesRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.tagId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
+                    ];
+                  },
+                );
               },
-            );
-          },
         ),
       );
 }
@@ -2250,7 +2546,7 @@ typedef $$TagsTableProcessedTableManager =
       $$TagsTableUpdateCompanionBuilder,
       (TagRow, $$TagsTableReferences),
       TagRow,
-      PrefetchHooks Function({bool messagesRefs})
+      PrefetchHooks Function({bool conversationId, bool messagesRefs})
     >;
 typedef $$MessagesTableCreateCompanionBuilder =
     MessagesCompanion Function({

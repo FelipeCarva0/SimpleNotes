@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/conversation.dart';
 import '../providers/conversation_providers.dart';
 import 'chat_screen.dart';
-import 'tags_screen.dart';
+
 
 /// RF06 — tela inicial: lista de todas as Conversas. A busca por título
 /// (RF06.1) entra na Sprint 4; esta versão (Sprint 0) cobre listagem e o
@@ -121,16 +121,6 @@ class HomeScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Arquivo'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.label_outline),
-            tooltip: 'Gerenciar tags',
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const TagsScreen()),
-            ),
-          ),
-        ],
       ),
       body: conversationsAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),

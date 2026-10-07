@@ -8,7 +8,8 @@ import '../widgets/tag_editor_dialog.dart';
 /// RF04 — gerenciamento global de Tags: criar, renomear, trocar cor e
 /// excluir. Excluir só remove a Tag; as mensagens permanecem.
 class TagsScreen extends ConsumerWidget {
-  const TagsScreen({super.key});
+  final String conversationId;
+  const TagsScreen({super.key, required this.conversationId});
 
   Future<void> _delete(BuildContext context, WidgetRef ref, Tag tag) async {
     final repo = ref.read(tagRepositoryProvider);
@@ -44,7 +45,7 @@ class TagsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final tagsAsync = ref.watch(tagsStreamProvider);
+    final tagsAsync = ref.watch(tagsStreamProvider(conversationId));
     final counts = ref.watch(tagUsageCountsProvider).maybeWhen(
           data: (m) => m,
           orElse: () => const <String, int>{},
@@ -97,7 +98,7 @@ class TagsScreen extends ConsumerWidget {
         },
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () => showCreateTagDialog(context, ref),
+        onPressed: () => showCreateTagDialog(context, ref, conversationId),
         tooltip: 'Nova tag',
         child: const Icon(Icons.add),
       ),

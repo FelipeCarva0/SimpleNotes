@@ -68,6 +68,7 @@ class ConversationRepository {
     await db.transaction(() async {
       await (db.delete(db.messages)..where((m) => m.conversationId.equals(id)))
           .go();
+      await (db.delete(db.tags)..where((t) => t.conversationId.equals(id))).go();
       await (db.delete(db.conversations)..where((c) => c.id.equals(id))).go();
     });
     await storage.deleteConversationFolder(id);
@@ -305,10 +306,18 @@ class ConversationRepository {
       /// `atualizadoEm` da Conversa permanecem intactos.
       Future<void> setMessageTag(String messageId, String? tagId) async {
         if (tagId != null) {
-          final exists = await (db.select(db.tags)..where((t) => t.id.equals(tagId)))
+          final message = await (db.select(db.messages)
+                ..where((m) => m.id.equals(messageId)))
               .getSingleOrNull();
-          if (exists == null) {
+          if (message == null) return;
+
+          final tag = await (db.select(db.tags)..where((t) => t.id.equals(tagId)))
+              .getSingleOrNull();
+          if (tag == null) {
             throw StateError('A tag selecionada não existe mais.');
+          }
+          if (tag.conversationId != message.conversationId) {
+            throw StateError('Esta tag pertence a outra conversa.');
           }
         }
 

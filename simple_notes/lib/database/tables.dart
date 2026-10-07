@@ -10,6 +10,7 @@ enum MessageType { texto, imagem, video, audio, documento }
 @DataClassName('TagRow')
 class Tags extends Table {
   TextColumn get id => text()();
+  TextColumn get conversationId => text().references(Conversations, #id)();
   TextColumn get nome => text()();
   TextColumn get cor => text()(); // hex, ex: '#FF5722'
 

@@ -2,7 +2,7 @@
 
 Cobre a Sprint 3 da especificação v5.1: gesto de arrastar (swipe) para
 definir/substituir a tag da mensagem (RF04), CRUD completo de Tag, exibição
-da tag junto à mensagem e gerenciamento global de tags.
+da tag junto à mensagem e gerenciamento de tags **por Conversa**.
 
 Inclui também a correção de um bug da Sprint 2 (captura de foto/vídeo pela
 câmera perdida quando o Android encerra o app), descrita ao final.
@@ -21,15 +21,16 @@ câmera perdida quando o Android encerra o app), descrita ao final.
 | Exibição | **Fita** colorida que passa por trás do balão, de ponta a ponta da linha, com o título à esquerda (substituiu a ideia inicial de uma seta ao lado do balão) |
 | Cores | **Paleta fixa** de 10 cores (hex) |
 | Nome da tag | Gravado em **MAIÚSCULAS**, sem espaços nas pontas e com espaços internos colapsados; símbolos especiais permitidos |
-| Nome duplicado ao **criar** | Não cria segunda tag: devolve a **existente** (mantém a cor dela) |
-| Nome duplicado ao **renomear** | **Bloqueado** com aviso, se o nome já pertence a outra tag (não há fusão automática) |
-| Tags | **Globais** (a mesma tag serve em qualquer conversa) |
+| **Escopo da tag** | **Por Conversa**: a tag pertence a uma Conversa e só é visível nas mensagens dela. Conversas não acessam tags de outras |
+| Nome duplicado ao **criar** | Não cria segunda tag: devolve a **existente na mesma conversa** (mantém a cor dela). O mesmo nome em outra conversa é uma tag independente |
+| Nome duplicado ao **renomear** | **Bloqueado** com aviso, se o nome já pertence a outra tag **da mesma conversa** (não há fusão automática) |
 | Mensagem x tag | No máximo **uma** tag por mensagem; nova tag substitui a anterior; "Sem tag" remove |
 | Excluir tag | Remove só a tag; **as mensagens permanecem** |
+| Excluir Conversa | **Exclui também as tags dela** |
 | Data | **Nunca** alterada por operações de tag |
 | `atualizadoEm` da Conversa | **Não** muda ao definir tag (tag não é atividade de conteúdo) |
-| Acesso ao gerenciamento | Ícone na AppBar da Home **e** link "Gerenciar tags" no sheet |
-| Schema | **Sem mudança** (`schemaVersion` continua 3, sem migração) |
+| Acesso ao gerenciamento | Ícone na AppBar do **chat** e link "Gerenciar tags" no sheet (o ícone da Home foi removido, pois não há mais lista global) |
+| Schema | **v4**: `Tags.conversationId`, com migração que preserva os dados |
 
 ---
 
@@ -43,8 +44,9 @@ câmera perdida quando o Android encerra o app), descrita ao final.
 | 3.3 | Gesto de arrastar com `Dismissible` |
 | 3.4 | Exibição da tag no balão, ao vivo (primeiro como seta, depois como fita) |
 | 3.5 | Tela "Gerenciar tags" |
-| 3.6 | Fechamento (checklist abaixo) |
+| Ajuste | Tags por conversa (schema v4, migração, escopo nos repositórios e na UI) |
 | Extra | Correção da captura de câmera perdida (ver seção própria) |
+| 3.6 | Fechamento (checklist abaixo) |
 
 ---
 
@@ -53,14 +55,14 @@ câmera perdida quando o Android encerra o app), descrita ao final.
 ```
 lib/
 ├── repositories/
-│   └── tag_repository.dart        # CRUD de Tag, normalização, contagem de uso
+│   └── tag_repository.dart        # CRUD de Tag por conversa, normalização, contagem de uso
 ├── providers/
-│   └── tag_providers.dart         # tagRepositoryProvider, tagsStreamProvider,
+│   └── tag_providers.dart         # tagRepositoryProvider, tagsStreamProvider (family),
 │                                  # tagUsageCountsProvider
 ├── screens/
-│   └── tags_screen.dart           # Gerenciar tags (criar, editar, excluir)
+│   └── tags_screen.dart           # Gerenciar tags da conversa (criar, editar, excluir)
 ├── widgets/
-│   ├── tag_chip.dart              # seta colorida (usada nos sheets e na lista)
+│   ├── tag_chip.dart              # seta colorida (sheets e lista de gerenciamento)
 │   ├── tag_ribbon.dart            # fita atrás do balão (usada no chat)
 │   ├── tag_editor_dialog.dart     # criar/editar tag (nome + paleta)
 │   ├── tag_picker_sheet.dart      # sheet de tag da mensagem
@@ -73,11 +75,13 @@ lib/
 
 | Arquivo | Alteração |
 |---|---|
-| `lib/database/app_database.dart` | `beforeOpen` liga `PRAGMA foreign_keys = ON` |
-| `lib/repositories/conversation_repository.dart` | `setMessageTag(messageId, tagId?)` |
-| `lib/services/attachment_service.dart` | Marcador e recuperação de captura perdida (ver seção própria) |
-| `lib/screens/chat_screen.dart` | `Dismissible` por mensagem, `_TagSwipeBackground`, `_openTagPicker`, item "Definir tag", mapa de tags ao vivo, marcador de captura em `_onAttachPressed` |
-| `lib/screens/home_screen.dart` | Ícone "Gerenciar tags" na AppBar |
+| `lib/database/tables.dart` | `Tags.conversationId` (FK para `Conversations`) |
+| `lib/database/app_database.dart` | `schemaVersion` 4; migração v3 → v4; `beforeOpen` liga `PRAGMA foreign_keys = ON` |
+| `lib/models/tag.dart` | Campo `conversationId` |
+| `lib/repositories/conversation_repository.dart` | `setMessageTag` (valida que a tag existe e é da mesma conversa); `delete` de Conversa também apaga as tags dela |
+| `lib/services/attachment_service.dart` | Marcador e recuperação de captura perdida |
+| `lib/screens/chat_screen.dart` | `Dismissible` por mensagem, `_TagSwipeBackground`, `_openTagPicker`, item "Definir tag", mapa de tags da conversa ao vivo, ícone "Gerenciar tags" na AppBar, marcador de captura em `_onAttachPressed` |
+| `lib/screens/home_screen.dart` | Sem ícone de tags (removido no ajuste por conversa) |
 | `lib/widgets/message_bubble.dart` | Recebe `Tag? tag`; `Stack` com `TagRibbon` atrás do balão; balão encolhe de 78% para 66% da largura quando há tag |
 | `lib/app.dart` | Home envolvida por `LostCaptureGate` |
 
@@ -89,34 +93,46 @@ lib/
 O SQLite **não aplica foreign keys por padrão** e o drift não liga isso
 sozinho: o `ON DELETE SET NULL` de `Messages.tagId` não funcionava na
 prática. O `beforeOpen` agora executa `PRAGMA foreign_keys = ON`, depois da
-migração (o `DROP TABLE` da migração v2 → v3 não é afetado). Além disso, a
-exclusão de Tag zera `tagId` explicitamente, sem depender só do pragma.
+migração. Além disso, a exclusão de Tag zera `tagId` explicitamente, sem
+depender só do pragma.
+
+Com as FKs ligadas, a exclusão de Conversa segue a ordem **mensagens → tags →
+conversa**, dentro de uma transação.
+
+### Migração v3 → v4
+A coluna `conversation_id` é adicionada a `tags` (nullable no SQLite, pois
+`ALTER TABLE ADD COLUMN` não aceita `NOT NULL` sem padrão; instalações novas
+a criam `NOT NULL`). Cada par (tag, conversa) em uso vira uma **tag própria da
+conversa**, as mensagens são reapontadas e as tags antigas sem conversa são
+descartadas. As cópias passam a ser independentes entre si.
 
 ### `TagRepository`
 - `normalizeName(raw)`: regra única (trim, colapsa espaços, `toUpperCase`);
   reaproveitar na busca da Sprint 4.
-- `watchAll()`: stream em ordem alfabética.
-- `createOrGet(nome, cor)`: em transação; devolve a existente se o nome
-  normalizado já existir.
+- `watchByConversation(conversationId)`: stream em ordem alfabética.
+- `createOrGet(conversationId, nome, cor)`: em transação; devolve a existente
+  se o nome normalizado já existir **na conversa**.
 - `update(id, {nome, cor})`: lança `DuplicateTagNameException` se o nome já
-  for de **outra** tag. Vale para todas as mensagens que usam a tag.
+  for de **outra** tag da mesma conversa.
 - `delete(id)`: em transação, zera `tagId` das mensagens e apaga a tag.
 - `countMessages(tagId)`: usado no aviso de exclusão.
 
 ### `ConversationRepository.setMessageTag`
 - `tagId` com valor define ou substitui; `null` remove.
-- Valida que a tag existe e lança `StateError` legível se não existir mais
-  (ex.: excluída com o sheet aberto).
+- Valida que a tag existe e **pertence à mesma conversa da mensagem**; falha
+  com `StateError` legível caso contrário.
 - Escreve **apenas** `tag_id`: `data`, `dataEditadaManualmente` e
   `atualizadoEm` ficam intactos.
 
 ### Providers
-- `tagRepositoryProvider`, `tagsStreamProvider`.
+- `tagRepositoryProvider`.
+- `tagsStreamProvider` (`family` por `conversationId`): tags de uma conversa.
 - `tagUsageCountsProvider`: agrupa mensagens por `tagId` (mapa
-  `tagId -> contagem`, ao vivo; ausente = 0).
-- O `ChatScreen` monta um `Map<String, Tag>` a partir do stream de tags e
-  passa a tag resolvida a cada balão, **sem join** na query de mensagens.
-  Renomear, recolorir ou excluir reflete na hora.
+  `tagId -> contagem`, ao vivo; ausente = 0). Os ids de tag são únicos, então
+  o provider continua global.
+- O `ChatScreen` monta um `Map<String, Tag>` a partir do stream de tags da
+  conversa e passa a tag resolvida a cada balão, **sem join** na query de
+  mensagens.
 
 ### Gesto de arrastar
 - `Dismissible` com `direction: startToEnd`, limiar de 25%.
@@ -126,17 +142,16 @@ exclusão de Tag zera `tagId` explicitamente, sem depender só do pragma.
 - Toque (editar texto, abrir arquivo) e long-press (menu) não conflitam.
 
 ### Sheet de tag (`tag_picker_sheet.dart`)
+- Lista só as tags **da conversa da mensagem**.
 - Mensagem **com** tag: topo mostra a tag atual com o botão **Configurar
-  tag** (edição global de nome e cor).
-- Lista de tags existentes (check na atual), **Nova tag**, **Sem tag**
-  (só quando há tag) e **Gerenciar tags**.
-- Opera sozinho via repositórios; o swipe e o menu de long-press usam o
-  mesmo ponto de entrada (`showTagPickerSheet`).
+  tag** (edição de nome e cor para as mensagens da conversa).
+- Lista de tags (check na atual), **Nova tag**, **Sem tag** (só quando há
+  tag) e **Gerenciar tags**.
 - Criar com nome repetido reaproveita a existente e avisa por snack.
 
 ### Editor de tag (`tag_editor_dialog.dart`)
-- `showCreateTagDialog` e `showEditTagDialog`, reaproveitados pela tela de
-  gerenciamento.
+- `showCreateTagDialog(context, ref, conversationId)` e `showEditTagDialog`,
+  reaproveitados pela tela de gerenciamento.
 - O diálogo **permanece aberto** em caso de erro (ex.: nome repetido ao
   renomear), mostrando a mensagem no próprio campo.
 
@@ -148,7 +163,8 @@ exclusão de Tag zera `tagId` explicitamente, sem depender só do pragma.
 - Fita e balão se movem juntos no arrasto.
 
 ### Tela "Gerenciar tags" (`tags_screen.dart`)
-- Lista com a seta de cada tag e a quantidade de mensagens (ao vivo).
+- Recebe o `conversationId` e lista só as tags daquela conversa, com a
+  quantidade de mensagens (ao vivo).
 - Criar (botão `+`), editar (toque ou ícone) e excluir.
 - Confirmação de exclusão consulta a contagem na hora e informa que as
   mensagens **permanecem**.
@@ -159,8 +175,9 @@ exclusão de Tag zera `tagId` explicitamente, sem depender só do pragma.
 
 - `data` e `dataEditadaManualmente` **nunca** mudam por operação de tag.
 - `atualizadoEm` da Conversa não muda por operação de tag.
-- Uma mensagem tem no máximo uma tag.
+- Uma mensagem tem no máximo uma tag, e ela é da mesma conversa.
 - Excluir uma tag nunca exclui mensagens nem arquivos.
+- Excluir uma Conversa exclui as tags dela.
 - Nenhuma operação de anexo (renomear, substituir) toca em `tagId`.
 
 ---
@@ -200,8 +217,12 @@ marcador e segue). Só atua no Android.
 - [ ] Definir, trocar e remover tag em texto, imagem, vídeo, áudio e documento
 - [ ] Arrastar uma mensagem que já tem tag permite trocar e configurar a tag
 - [ ] Renomear e recolorir a tag atualizam todas as fitas na conversa aberta
-- [ ] Nome duplicado ao criar reaproveita a existente; ao renomear, é bloqueado
+- [ ] Tag criada na conversa A não aparece na conversa B; mesmo nome em B é uma tag independente
+- [ ] Renomear/recolorir na A não afeta a B
+- [ ] Nome duplicado ao criar (na mesma conversa) reaproveita a existente; ao renomear, é bloqueado
 - [ ] Excluir tag (em uso e sem uso): mensagens permanecem, só perdem a fita, sem erro ao reabrir a conversa
+- [ ] Excluir Conversa com tags: sem erro, e as tags somem junto
+- [ ] Migração v3 → v4 por cima da instalação anterior preservou as fitas
 - [ ] Contagens na tela "Gerenciar tags" corretas e atualizando
 - [ ] `data` e ícone de data editada intactos após qualquer operação de tag
 - [ ] Tags e atribuições persistem após fechar e reabrir o app
@@ -212,19 +233,27 @@ marcador e segue). Só atua no Android.
 
 ## Limitações conhecidas e pendências
 
-1. **Sem filtro por tag ainda:** a busca por tag entra na **Sprint 4**
-   (usar `TagRepository.normalizeName` para comparar nomes).
-2. **`TagChip.compact` sem uso:** ficou da tentativa de seta compacta ao
+1. **Spec a atualizar:** RF04 e o modelo de dados de `Tag` ainda não citam o
+   escopo por Conversa nem `conversa_id`. Trecho sugerido: "cada Tag
+   pertence a uma Conversa e só é visível nas Mensagens dela; o nome é único
+   dentro da Conversa; excluir a Conversa exclui suas Tags".
+2. **Sem filtro por tag ainda:** a busca por tag entra na **Sprint 4**
+   (usar `TagRepository.normalizeName` para comparar nomes; as tags
+   disponíveis no filtro são as da conversa aberta).
+3. **`TagChip.compact` sem uso:** ficou da tentativa de seta compacta ao
    lado do balão; pode ser removido, voltando aos valores fixos.
-3. **Import não usado** de `tag_repository.dart` em `tag_picker_sheet.dart`
+4. **Import não usado** de `tag_repository.dart` em `tag_picker_sheet.dart`
    (remover se o `analyze` avisar).
-4. **Tags órfãs:** não há limpeza automática de tags sem mensagens; ficam
-   disponíveis para reuso. A tela de gerenciamento permite excluí-las.
-5. **Sem fusão de tags:** renomear para um nome existente é bloqueado; unir
-   duas tags exige reatribuir as mensagens e excluir a antiga.
-6. **Acessibilidade do gesto:** o swipe tem alternativa no menu de
+5. **Tags sem uso:** não há limpeza automática de tags sem mensagens dentro
+   de uma conversa; ficam disponíveis para reuso e podem ser excluídas na
+   tela de gerenciamento.
+6. **Sem fusão de tags:** renomear para um nome existente na conversa é
+   bloqueado; unir duas tags exige reatribuir as mensagens e excluir a antiga.
+7. **Sem copiar tags entre conversas:** para usar a mesma tag em outra
+   conversa é preciso criá-la de novo lá.
+8. **Acessibilidade do gesto:** o swipe tem alternativa no menu de
    long-press ("Definir tag").
-7. **Pendências herdadas da Sprint 2:** progresso real de cópia, varredura
+9. **Pendências herdadas da Sprint 2:** progresso real de cópia, varredura
    de órfãos em `media/`, player interno, seleção múltipla, subtítulo de
    data na home e remoção de `line_diff_engine.dart`.
 
@@ -234,6 +263,4 @@ marcador e segue). Só atua no Android.
 
 **Sprint 4 — Busca e filtros:** busca de Conversa por título na tela
 inicial (RF06.1) e, dentro da Conversa, busca por texto, data, tipo de
-arquivo e tag, combináveis (RF05). A tag já está disponível por
-`Messages.tagId`, e `TagRepository.normalizeName` define a comparação de
-nomes.
+arquivo e tag, combináveis (RF05).

@@ -7,7 +7,11 @@ import '../utils/tag_colors.dart';
 
 /// Cria uma Tag (nome + cor da paleta). Se o nome normalizado já existir,
 /// devolve a Tag existente. Retorna null se o usuário cancelar.
-Future<Tag?> showCreateTagDialog(BuildContext context, WidgetRef ref) async {
+Future<Tag?> showCreateTagDialog(
+  BuildContext context,
+  WidgetRef ref,
+  String conversationId,
+) async {
   final repo = ref.read(tagRepositoryProvider);
   Tag? created;
 
@@ -17,10 +21,16 @@ Future<Tag?> showCreateTagDialog(BuildContext context, WidgetRef ref) async {
       title: 'Nova tag',
       onSave: (nome, cor) async {
         try {
-          created = await repo.createOrGet(nome: nome, cor: cor);
+          created = await repo.createOrGet(
+            conversationId: conversationId,
+            nome: nome,
+            cor: cor,
+          );
           return null;
         } on ArgumentError catch (e) {
           return '${e.message}';
+        } on StateError catch (e) {
+          return e.message;
         }
       },
     ),
@@ -28,7 +38,6 @@ Future<Tag?> showCreateTagDialog(BuildContext context, WidgetRef ref) async {
 
   return saved == true ? created : null;
 }
-
 /// Edita nome e/ou cor de uma Tag, valendo para TODAS as mensagens que a
 /// usam. Retorna true se salvou.
 Future<bool> showEditTagDialog(
@@ -43,7 +52,7 @@ Future<bool> showEditTagDialog(
     builder: (_) => _TagEditorDialog(
       title: 'Configurar tag',
       initial: tag,
-      helper: 'A alteração vale para todas as mensagens com esta tag.',
+      helper: 'A alteração vale para todas as mensagens desta conversa com esta tag.',
       onSave: (nome, cor) async {
         try {
           await repo.update(tag.id, nome: nome, cor: cor);
@@ -52,6 +61,8 @@ Future<bool> showEditTagDialog(
           return e.toString();
         } on ArgumentError catch (e) {
           return '${e.message}';
+        } on StateError catch (e) {
+          return e.message;
         }
       },
     ),

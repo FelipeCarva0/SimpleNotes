@@ -3,17 +3,18 @@ import 'package:uuid/uuid.dart';
 import '../database/app_database.dart';
 import '../models/tag.dart';
 
-/// Lançada ao renomear uma Tag para um nome que já pertence a outra.
+/// Lançada ao renomear uma Tag para um nome que já pertence a outra
+/// Tag da mesma Conversa.
 class DuplicateTagNameException implements Exception {
   final String nome;
   const DuplicateTagNameException(this.nome);
   @override
-  String toString() => 'Já existe uma tag chamada "$nome".';
+  String toString() => 'Já existe uma tag chamada "$nome" nesta conversa.';
 }
 
-/// RF04 — CRUD de Tag. A unicidade de nome é garantida aqui (não no
-/// schema): o nome é normalizado para MAIÚSCULAS, sem espaços nas pontas e
-/// com espaços internos colapsados. Símbolos especiais são permitidos.
+/// RF04 — CRUD de Tag, sempre no escopo de uma Conversa. A unicidade de nome
+/// vale dentro da Conversa (não no schema): nome em MAIÚSCULAS, sem espaços
+/// nas pontas e com espaços internos colapsados. Símbolos são permitidos.
 class TagRepository {
   final AppDatabase db;
   final _uuid = const Uuid();
@@ -24,15 +25,21 @@ class TagRepository {
   static String normalizeName(String raw) =>
       raw.trim().replaceAll(RegExp(r'\s+'), ' ').toUpperCase();
 
-  Stream<List<Tag>> watchAll() {
+  /// Tags de UMA Conversa, em ordem alfabética, ao vivo.
+  Stream<List<Tag>> watchByConversation(String conversationId) {
     final query = db.select(db.tags)
+      ..where((t) => t.conversationId.equals(conversationId))
       ..orderBy([(t) => OrderingTerm.asc(t.nome)]);
     return query.watch().map((rows) => rows.map(_toModel).toList());
   }
 
-  /// Cria a Tag, ou devolve a já existente se o nome normalizado repetir
-  /// (nesse caso a cor existente é mantida).
-  Future<Tag> createOrGet({required String nome, required String cor}) async {
+  /// Cria a Tag na Conversa, ou devolve a já existente se o nome normalizado
+  /// repetir (nesse caso a cor existente é mantida).
+  Future<Tag> createOrGet({
+    required String conversationId,
+    required String nome,
+    required String cor,
+  }) async {
     final normalized = normalizeName(nome);
     if (normalized.isEmpty) {
       throw ArgumentError('O nome da tag não pode ser vazio.');
@@ -40,20 +47,33 @@ class TagRepository {
 
     return db.transaction(() async {
       final existing = await (db.select(db.tags)
-            ..where((t) => t.nome.equals(normalized)))
+            ..where((t) =>
+                t.conversationId.equals(conversationId) &
+                t.nome.equals(normalized)))
           .getSingleOrNull();
       if (existing != null) return _toModel(existing);
 
       final id = _uuid.v4();
       await db.into(db.tags).insert(
-            TagsCompanion.insert(id: id, nome: normalized, cor: cor),
+            TagsCompanion.insert(
+              id: id,
+              conversationId: conversationId,
+              nome: normalized,
+              cor: cor,
+            ),
           );
-      return Tag(id: id, nome: normalized, cor: cor);
+      return Tag(
+        id: id,
+        conversationId: conversationId,
+        nome: normalized,
+        cor: cor,
+      );
     });
   }
 
-  /// Atualiza nome e/ou cor (vale para todas as mensagens que usam a Tag).
-  /// Lança [DuplicateTagNameException] se o novo nome já for de OUTRA Tag.
+  /// Atualiza nome e/ou cor (vale para as mensagens da Conversa que usam a Tag).
+  /// Lança [DuplicateTagNameException] se o novo nome já for de OUTRA Tag
+  /// da mesma Conversa.
   Future<void> update(String id, {String? nome, String? cor}) async {
     String? normalized;
     if (nome != null) {
@@ -61,8 +81,16 @@ class TagRepository {
       if (normalized.isEmpty) {
         throw ArgumentError('O nome da tag não pode ser vazio.');
       }
+
+      final row = await (db.select(db.tags)..where((t) => t.id.equals(id)))
+          .getSingleOrNull();
+      if (row == null) throw StateError('A tag não existe mais.');
+
       final clash = await (db.select(db.tags)
-            ..where((t) => t.nome.equals(normalized!) & t.id.equals(id).not()))
+            ..where((t) =>
+                t.conversationId.equals(row.conversationId) &
+                t.nome.equals(normalized!) &
+                t.id.equals(id).not()))
           .getSingleOrNull();
       if (clash != null) throw DuplicateTagNameException(normalized);
     }
@@ -76,7 +104,6 @@ class TagRepository {
   }
 
   /// Exclui só a Tag; as mensagens permanecem e apenas perdem a tag.
-  /// Zera `tagId` explicitamente (sem depender só do ON DELETE SET NULL).
   Future<void> delete(String id) async {
     await db.transaction(() async {
       await (db.update(db.messages)..where((m) => m.tagId.equals(id)))
@@ -95,5 +122,10 @@ class TagRepository {
     return row.read(count) ?? 0;
   }
 
-  Tag _toModel(TagRow row) => Tag(id: row.id, nome: row.nome, cor: row.cor);
+  Tag _toModel(TagRow row) => Tag(
+        id: row.id,
+        conversationId: row.conversationId,
+        nome: row.nome,
+        cor: row.cor,
+      );
 }

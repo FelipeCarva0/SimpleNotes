@@ -305,7 +305,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         if (!mounted) return;
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (_) => const TagsScreen()),
+          MaterialPageRoute(
+            builder: (_) => TagsScreen(conversationId: widget.conversationId),
+          ),
         );
       },
     );
@@ -409,11 +411,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         ref.watch(conversationByIdProvider(widget.conversationId));
     final messagesAsync = ref.watch(messagesStreamProvider(widget.conversationId));
     final tagsById = <String, Tag>{
-      for (final t in ref.watch(tagsStreamProvider).maybeWhen(
-            data: (tags) => tags,
-            orElse: () => const <Tag>[],
-          ))
-        t.id: t,
+      for (final t in ref.watch(tagsStreamProvider(widget.conversationId)).maybeWhen(
+          data: (tags) => tags,
+          orElse: () => const <Tag>[],
+        ))
+      t.id: t,
     };
     // Rola pro fim quando uma mensagem nova chega, sem brigar com o scroll
     // manual do usuário revendo mensagens antigas (só dispara quando a
@@ -432,6 +434,18 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           loading: () => const Text(''),
           error: (_, _) => const Text('Erro'),
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.label_outline),
+            tooltip: 'Gerenciar tags',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => TagsScreen(conversationId: widget.conversationId),
+              ),
+            ),
+          ),
+        ],
       ),
       body: Column(
         children: [
