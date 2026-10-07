@@ -293,4 +293,26 @@ class ConversationRepository {
         final oldPath = row.arquivoPath;
         if (oldPath != null) await storage.delete(oldPath);
       }
+
+      // ---------------------------------------------------------------------
+      // Mensagem — tag (RF04) — Sprint 3
+      // ---------------------------------------------------------------------
+
+      /// RF04 — define, substitui ou remove (tagId == null) a Tag de uma
+      /// Mensagem. Cada Mensagem tem no máximo uma Tag.
+      ///
+      /// Escreve APENAS `tag_id`: `data`, `dataEditadaManualmente` e o
+      /// `atualizadoEm` da Conversa permanecem intactos.
+      Future<void> setMessageTag(String messageId, String? tagId) async {
+        if (tagId != null) {
+          final exists = await (db.select(db.tags)..where((t) => t.id.equals(tagId)))
+              .getSingleOrNull();
+          if (exists == null) {
+            throw StateError('A tag selecionada não existe mais.');
+          }
+        }
+
+        await (db.update(db.messages)..where((m) => m.id.equals(messageId)))
+            .write(MessagesCompanion(tagId: Value(tagId)));
+      }
 }

@@ -7,18 +7,22 @@ import '../database/tables.dart' show MessageType;
 import '../models/message.dart';
 import '../providers/conversation_providers.dart';
 import '../utils/format.dart';
+import '../models/tag.dart';
+import 'tag_ribbon.dart';
 
 /// Balão de uma Mensagem (RF01/RF02). Ramifica por tipo (Sprint 2).
 ///
 /// Sprint 3 (RF04): o gesto de arrastar envolve este widget por fora.
 class MessageBubble extends ConsumerWidget {
   final Message message;
+  final Tag? tag;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
 
   const MessageBubble({
     super.key,
     required this.message,
+    this.tag,
     this.onTap,
     this.onLongPress,
   });
@@ -29,49 +33,61 @@ class MessageBubble extends ConsumerWidget {
     final isMedia =
         message.tipo == MessageType.imagem || message.tipo == MessageType.video;
 
-    return Align(
-      alignment: Alignment.centerRight,
-      child: GestureDetector(
-        onTap: onTap,
-        onLongPress: onLongPress,
-        child: Container(
-          constraints: BoxConstraints(
-            maxWidth: MediaQuery.of(context).size.width * 0.78,
+    // Com tag, o balão cede espaço à esquerda para o título da fita.
+    final maxFactor = tag != null ? 0.66 : 0.78;
+
+    return Stack(
+      children: [
+        // RF04 — fita atrás do balão, de ponta a ponta, centrada na vertical.
+        if (tag != null)
+          Positioned.fill(
+            child: Center(child: TagRibbon(tag: tag!)),
           ),
-          margin: const EdgeInsets.symmetric(vertical: 3),
-          padding: isMedia
-              ? const EdgeInsets.all(4)
-              : const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: scheme.primaryContainer,
-            borderRadius: const BorderRadius.only(
-              topLeft: Radius.circular(14),
-              topRight: Radius.circular(14),
-              bottomLeft: Radius.circular(14),
-              bottomRight: Radius.circular(2),
+        Align(
+          alignment: Alignment.centerRight,
+          child: GestureDetector(
+            onTap: onTap,
+            onLongPress: onLongPress,
+            child: Container(
+              constraints: BoxConstraints(
+                maxWidth: MediaQuery.of(context).size.width * maxFactor,
+              ),
+              margin: const EdgeInsets.symmetric(vertical: 3),
+              padding: isMedia
+                  ? const EdgeInsets.all(4)
+                  : const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: scheme.primaryContainer,
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(14),
+                  topRight: Radius.circular(14),
+                  bottomLeft: Radius.circular(14),
+                  bottomRight: Radius.circular(2),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _content(context, scheme),
+                  if (message.dataEditadaManualmente)
+                    Padding(
+                      padding: EdgeInsets.only(top: 3, right: isMedia ? 6 : 0),
+                      child: Tooltip(
+                        message: 'Data editada manualmente',
+                        child: Icon(
+                          Icons.edit_calendar_outlined,
+                          size: 13,
+                          color: scheme.onPrimaryContainer.withValues(alpha: 0.7),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _content(context, scheme),
-              if (message.dataEditadaManualmente)
-                Padding(
-                  padding: EdgeInsets.only(top: 3, right: isMedia ? 6 : 0),
-                  child: Tooltip(
-                    message: 'Data editada manualmente',
-                    child: Icon(
-                      Icons.edit_calendar_outlined,
-                      size: 13,
-                      color: scheme.onPrimaryContainer.withValues(alpha: 0.7),
-                    ),
-                  ),
-                ),
-            ],
-          ),
         ),
-      ),
+      ],
     );
   }
 

@@ -1,6 +1,6 @@
-// app.dart
 import 'package:flutter/material.dart';
 import 'screens/home_screen.dart';
+import 'widgets/lost_capture_gate.dart';
 
 class ArquivoApp extends StatelessWidget {
   const ArquivoApp({super.key});
@@ -10,7 +10,7 @@ class ArquivoApp extends StatelessWidget {
     return MaterialApp(
       title: 'Arquivo',
       theme: ThemeData(useMaterial3: true, colorSchemeSeed: Colors.indigo),
-      home: const HomeScreen(),
+      home: const LostCaptureGate(child: HomeScreen()),
     );
   }
 }

@@ -200,6 +200,53 @@ class AttachmentService {
     }
   }
 
+
+  // ----------------------------------------------------------------
+  // Recuperação de captura perdida (Android pode matar o app durante a câmera)
+  // ----------------------------------------------------------------
+
+  Future<File> _pendingFile() async {
+    final dir = await getApplicationSupportDirectory();
+    return File(p.join(dir.path, 'pending_capture.txt'));
+  }
+
+  /// Grava em qual Conversa a captura foi pedida, ANTES de abrir a câmera.
+  Future<void> markPendingCapture(String conversationId) async {
+    await (await _pendingFile()).writeAsString(conversationId, flush: true);
+  }
+
+  Future<String?> readPendingCapture() async {
+    final f = await _pendingFile();
+    if (!await f.exists()) return null;
+    final value = (await f.readAsString()).trim();
+    return value.isEmpty ? null : value;
+  }
+
+  Future<void> clearPendingCapture() async {
+    final f = await _pendingFile();
+    if (await f.exists()) await f.delete();
+  }
+
+  /// Recupera a foto/vídeo cujo resultado se perdeu quando o Android
+  /// recriou o app. Só existe no Android; devolve null se não houver nada.
+  Future<PickedAttachment?> retrieveLostCapture() async {
+    if (!Platform.isAndroid) return null;
+
+    final response = await _imagePicker.retrieveLostData();
+    if (response.isEmpty) return null;
+
+    final x = response.file ??
+        (response.files != null && response.files!.isNotEmpty
+            ? response.files!.first
+            : null);
+    if (x == null) return null;
+
+    return response.type == RetrieveType.video
+        ? _fromXFile(x, MessageType.video, prefix: 'Vídeo')
+        : _fromXFile(x, MessageType.imagem, prefix: 'Foto');
+  }
+
+
   // ----------------------------------------------------------------
   // Utilitários
   // ----------------------------------------------------------------

@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,6 +9,10 @@ import '../services/attachment_service.dart';
 import '../widgets/attachment_picker_sheet.dart';
 import '../widgets/audio_recorder_dialog.dart';
 import '../database/tables.dart' show MessageType;
+import '../widgets/tag_picker_sheet.dart';
+import '../models/tag.dart';
+import '../providers/tag_providers.dart';
+import 'tags_screen.dart';
 
 /// Tela de chat de uma Conversa (RF01, RF02, RF03) — Sprint 1: só mensagens
 /// de texto. Anexos de arquivo (RF02.3) entram na Sprint 2 e o gesto de
@@ -87,6 +92,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     if (action == null || !mounted) return;
 
     final service = ref.read(attachmentServiceProvider);
+    final isCapture =
+        action == AttachmentAction.camera || action == AttachmentAction.video;
+
+    // Se o Android matar o app durante a câmera, este marcador sobra em disco
+    // e permite recuperar a captura na próxima abertura.
+    if (isCapture) await service.markPendingCapture(widget.conversationId);
 
     try {
       PickedAttachment? picked;
@@ -115,6 +126,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     } catch (e) {
       _showSnack('Não foi possível anexar o arquivo.');
       debugPrint('Erro ao anexar: $e');
+    } finally {
+      // Só chega aqui se o app NÃO foi morto; se foi, o marcador permanece.
+      if (isCapture) await service.clearPendingCapture();
     }
   }
 
@@ -281,6 +295,22 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         .setMessageDateManually(message.id, picked);
   }
 
+  /// RF04 — abre o sheet de tag da mensagem.
+  void _openTagPicker(Message message) {
+    if (!mounted) return;
+    showTagPickerSheet(
+      context,
+      message: message,
+      onManageTags: () {
+        if (!mounted) return;
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const TagsScreen()),
+        );
+      },
+    );
+  }
+
   /// RF02.5 — exclusão explícita, distinta de qualquer edição de conteúdo.
   Future<void> _deleteMessage(Message message) async {
     final confirm = await showDialog<bool>(
@@ -348,9 +378,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                 Navigator.pop(context);
                 _editDate(message);
               },
+            ),ListTile(
+              leading: const Icon(Icons.label_outline),
+              title: const Text('Definir tag'),
+              onTap: () {
+                Navigator.pop(context);
+                _openTagPicker(message);
+              },
             ),
-            // Ponto de extensão da Sprint 3 (RF04): "Definir tag" entra
-            // aqui como mais um ListTile, além do gesto de arrastar.
             ListTile(
               leading: const Icon(Icons.delete_outline),
               title: const Text('Excluir'),
@@ -373,7 +408,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final conversationAsync =
         ref.watch(conversationByIdProvider(widget.conversationId));
     final messagesAsync = ref.watch(messagesStreamProvider(widget.conversationId));
-
+    final tagsById = <String, Tag>{
+      for (final t in ref.watch(tagsStreamProvider).maybeWhen(
+            data: (tags) => tags,
+            orElse: () => const <Tag>[],
+          ))
+        t.id: t,
+    };
     // Rola pro fim quando uma mensagem nova chega, sem brigar com o scroll
     // manual do usuário revendo mensagens antigas (só dispara quando a
     // contagem cresce).
@@ -417,12 +458,24 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         if (showDateSeparator) _DateSeparator(date: message.data),
-                        MessageBubble(
-                          message: message,
-                          onTap: message.tipo == MessageType.texto
-                              ? () => _editMessage(message)
-                              : null,
-                          onLongPress: () => _showMessageActions(message),
+                        Dismissible(
+                          key: ValueKey(message.id),
+                          direction: DismissDirection.startToEnd,
+                          dismissThresholds: const {DismissDirection.startToEnd: 0.25},
+                          background: const _TagSwipeBackground(),
+                          confirmDismiss: (_) async {
+                            HapticFeedback.lightImpact();
+                            _openTagPicker(message); // sem await: o balão volta ao lugar na hora
+                            return false;
+                          },
+                          child: MessageBubble(
+                            message: message,
+                            tag: tagsById[message.tagId],
+                            onTap: message.tipo == MessageType.texto
+                                ? () => _editMessage(message)
+                                : null,
+                            onLongPress: () => _showMessageActions(message),
+                          ),
                         ),
                       ],
                     );
@@ -444,6 +497,23 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     );
   }
 }
+
+  /// Fundo revelado enquanto o balão é arrastado (RF04).
+  class _TagSwipeBackground extends StatelessWidget {
+    const _TagSwipeBackground();
+
+    @override
+    Widget build(BuildContext context) {
+      return Container(
+        alignment: Alignment.centerLeft,
+        padding: const EdgeInsets.only(left: 20),
+        child: Icon(
+          Icons.label_outline,
+          color: Theme.of(context).colorScheme.primary,
+        ),
+      );
+    }
+  }
 
 class _DateSeparator extends StatelessWidget {
   final DateTime date;
