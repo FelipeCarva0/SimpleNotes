@@ -13,6 +13,11 @@ import '../widgets/tag_picker_sheet.dart';
 import '../models/tag.dart';
 import '../providers/tag_providers.dart';
 import 'tags_screen.dart';
+import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
+import '../search/message_search.dart';
+import '../utils/format.dart';
+import '../widgets/search_options_sheet.dart';
+import '../widgets/message_details_sheet.dart';
 
 /// Tela de chat de uma Conversa (RF01, RF02, RF03) — Sprint 1: só mensagens
 /// de texto. Anexos de arquivo (RF02.3) entram na Sprint 2 e o gesto de
@@ -29,7 +34,9 @@ class ChatScreen extends ConsumerStatefulWidget {
 
 class _ChatScreenState extends ConsumerState<ChatScreen> {
   final _controller = TextEditingController();
-  final _scrollController = ScrollController();
+  final _itemScrollController = ItemScrollController();
+  String? _highlightedId;
+  Timer? _highlightTimer;
   Timer? _debounce;
 
   // Só ficamos true depois de carregar o rascunho já salvo no banco; evita
@@ -225,16 +232,109 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
   void _scrollToBottomOnNextFrame() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_scrollController.hasClients) return;
-      _scrollController.animateTo(
-        _scrollController.position.maxScrollExtent,
+      if (!_itemScrollController.isAttached) return;
+      // Lista invertida: o índice 0 é a mensagem mais recente.
+      _itemScrollController.scrollTo(
+        index: 0,
         duration: const Duration(milliseconds: 200),
         curve: Curves.easeOut,
       );
     });
   }
+  /// Rola até a mensagem de índice cronológico [index] (posição na lista
+  /// completa da conversa, de [total] mensagens) e a destaca por um instante.
+  void _goToMessage({
+    required int index,
+    required int total,
+    required String messageId,
+  }) {
+    if (!_itemScrollController.isAttached) return;
 
+    // A lista é invertida: converte o índice cronológico no índice do widget.
+    _itemScrollController.scrollTo(
+      index: total - 1 - index,
+      alignment: 0.4,
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeInOut,
+    );
 
+    _highlightTimer?.cancel();
+    setState(() => _highlightedId = messageId);
+    _highlightTimer = Timer(const Duration(milliseconds: 1800), () {
+      if (mounted) setState(() => _highlightedId = null);
+    });
+  }
+  void _onMenuSelected(String value) {
+    switch (value) {
+      case 'search':
+        _openSearchMenu();
+      case 'tags':
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => TagsScreen(conversationId: widget.conversationId),
+          ),
+        );
+    }
+  }
+
+  /// RF05 — abre o sheet "Pesquisar" e executa o modo escolhido.
+  Future<void> _openSearchMenu() async {
+    final mode = await showSearchOptionsSheet(context);
+    if (mode == null || !mounted) return;
+
+    switch (mode) {
+      case SearchMode.goToDate:
+        await _searchByDate();
+    }
+  }
+
+  /// RF05 — data simples: vai para a primeira mensagem do dia escolhido.
+  Future<void> _searchByDate() async {
+    final messages =
+        ref.read(messagesStreamProvider(widget.conversationId)).valueOrNull;
+    if (messages == null || messages.isEmpty) {
+      _showSnack('Esta conversa ainda não tem mensagens.');
+      return;
+    }
+
+    DateTime dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
+
+    // Período coberto pela conversa (as datas podem ter sido editadas
+    // manualmente, então não dá para assumir que a lista está em ordem).
+    var first = dateOnly(messages.first.data);
+    var last = first;
+    for (final m in messages) {
+      final d = dateOnly(m.data);
+      if (d.isBefore(first)) first = d;
+      if (d.isAfter(last)) last = d;
+    }
+
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: last,
+      firstDate: first,
+      lastDate: last,
+      helpText: 'Ir para o dia',
+    );
+    if (picked == null || !mounted) return;
+
+    // Relê a lista: pode ter mudado enquanto o calendário estava aberto.
+    final current =
+        ref.read(messagesStreamProvider(widget.conversationId)).valueOrNull ??
+            messages;
+    final index = firstIndexOnDate(current, picked);
+    if (index == null) {
+      _showSnack('Nenhuma mensagem em ${formatDate(picked)}.');
+      return;
+    }
+
+    _goToMessage(
+      index: index,
+      total: current.length,
+      messageId: current[index].id,
+    );
+  }
   @override
   void dispose() {
     _debounce?.cancel();
@@ -246,7 +346,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           .saveDraft(widget.conversationId, _controller.text);
     }
     _controller.dispose();
-    _scrollController.dispose();
+    _highlightTimer?.cancel();
     super.dispose();
   }
 
@@ -312,6 +412,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       },
     );
   }
+    void _openDetails(Message message, int position, int total, Tag? tag) {
+    if (!mounted) return;
+    showMessageDetailsSheet(
+      context,
+      message: message,
+      tag: tag,
+      position: position,
+      total: total,
+    );
+  }
 
   /// RF02.5 — exclusão explícita, distinta de qualquer edição de conteúdo.
   Future<void> _deleteMessage(Message message) async {
@@ -321,13 +431,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         title: const Text('Excluir mensagem?'),
         content: const Text('Essa ação não pode ser desfeita.'),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancelar'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Excluir'),
+          PopupMenuButton<String>(
+            onSelected: _onMenuSelected,
+            itemBuilder: (_) => const [
+              // TEMPORÁRIOS (Etapa 4.2): somem na 4.3, quando entra "Pesquisar".
+              PopupMenuItem(value: 'debug_first', child: Text('[teste] Ir ao início')),
+              PopupMenuItem(value: 'debug_last', child: Text('[teste] Ir ao fim')),
+              PopupMenuItem(value: 'tags', child: Text('Gerenciar tags')),
+            ],
           ),
         ],
       ),
@@ -402,8 +513,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     );
   }
 
-  bool _isSameDay(DateTime a, DateTime b) =>
-      a.year == b.year && a.month == b.month && a.day == b.day;
 
   @override
   Widget build(BuildContext context) {
@@ -435,15 +544,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           error: (_, _) => const Text('Erro'),
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.label_outline),
-            tooltip: 'Gerenciar tags',
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => TagsScreen(conversationId: widget.conversationId),
-              ),
-            ),
+          PopupMenuButton<String>(
+            onSelected: _onMenuSelected,
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'search', child: Text('Pesquisar')),
+              PopupMenuItem(value: 'tags', child: Text('Gerenciar tags')),
+            ],
           ),
         ],
       ),
@@ -459,41 +565,59 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                     child: Text('Nenhuma mensagem ainda. Escreva algo abaixo.'),
                   );
                 }
-                return ListView.builder(
-                  controller: _scrollController,
+                return ScrollablePositionedList.builder(
+                  itemScrollController: _itemScrollController,
+                  reverse: true,
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
                   itemCount: messages.length,
-                  itemBuilder: (context, index) {
-                    final message = messages[index];
-                    final previous = index > 0 ? messages[index - 1] : null;
-                    final showDateSeparator =
-                        previous == null || !_isSameDay(previous.data, message.data);
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        if (showDateSeparator) _DateSeparator(date: message.data),
-                        Dismissible(
-                          key: ValueKey(message.id),
-                          direction: DismissDirection.startToEnd,
-                          dismissThresholds: const {DismissDirection.startToEnd: 0.25},
-                          background: const _TagSwipeBackground(),
-                          confirmDismiss: (_) async {
-                            HapticFeedback.lightImpact();
-                            _openTagPicker(message); // sem await: o balão volta ao lugar na hora
-                            return false;
-                          },
-                          child: MessageBubble(
-                            message: message,
-                            tag: tagsById[message.tagId],
-                            onTap: message.tipo == MessageType.texto
-                                ? () => _editMessage(message)
-                                : null,
-                            onLongPress: () => _showMessageActions(message),
-                          ),
-                        ),
-                      ],
-                    );
-                  },
+                  itemBuilder: (context, displayIndex) {
+  // Lista invertida: converte para o índice cronológico da mensagem.
+  final index = messages.length - 1 - displayIndex;
+  final message = messages[index];
+
+  return AnimatedContainer(
+    duration: const Duration(milliseconds: 300),
+    decoration: BoxDecoration(
+      color: message.id == _highlightedId
+          ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.18)
+          : Colors.transparent,
+      borderRadius: BorderRadius.circular(8),
+    ),
+    child: Dismissible(
+  key: ValueKey(message.id),
+  direction: DismissDirection.horizontal,
+  dismissThresholds: const {
+    DismissDirection.startToEnd: 0.25,
+    DismissDirection.endToStart: 0.25,
+  },
+  background: const _TagSwipeBackground(),
+  secondaryBackground: const _DetailsSwipeBackground(),
+  confirmDismiss: (direction) async {
+    HapticFeedback.lightImpact();
+    // Sem await: a linha volta ao lugar na hora.
+    if (direction == DismissDirection.startToEnd) {
+      _openTagPicker(message);
+    } else {
+      _openDetails(
+        message,
+        index + 1,
+        messages.length,
+        tagsById[message.tagId],
+      );
+    }
+    return false;
+  },
+  child: MessageBubble(
+    message: message,
+    tag: tagsById[message.tagId],
+    onTap: message.tipo == MessageType.texto
+        ? () => _editMessage(message)
+        : null,
+    onLongPress: () => _showMessageActions(message),
+  ),
+),
+  );
+},
                 );
               },
             ),
@@ -529,36 +653,22 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     }
   }
 
-class _DateSeparator extends StatelessWidget {
-  final DateTime date;
-  const _DateSeparator({required this.date});
+  /// Fundo revelado ao arrastar o balão para a esquerda (detalhes).
+  class _DetailsSwipeBackground extends StatelessWidget {
+    const _DetailsSwipeBackground();
 
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Center(
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Text(
-            _formatDate(date),
-            style: Theme.of(context).textTheme.labelSmall,
-          ),
+    @override
+    Widget build(BuildContext context) {
+      return Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 20),
+        child: Icon(
+          Icons.info_outline,
+          color: Theme.of(context).colorScheme.primary,
         ),
-      ),
-    );
+      );
+    }
   }
-
-  String _formatDate(DateTime date) {
-    String two(int n) => n.toString().padLeft(2, '0');
-    return '${two(date.day)}/${two(date.month)}/${date.year}';
-  }
-}
-
 class _Composer extends StatelessWidget {
   final TextEditingController controller;
   final bool enabled;

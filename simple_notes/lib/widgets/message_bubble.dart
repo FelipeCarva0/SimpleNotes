@@ -33,64 +33,69 @@ class MessageBubble extends ConsumerWidget {
     final isMedia =
         message.tipo == MessageType.imagem || message.tipo == MessageType.video;
 
-    // Com tag, o balão cede espaço à esquerda para o título da fita.
-    final maxFactor = tag != null ? 0.66 : 0.78;
+    // Relativo à área ao lado da coluna de data. Com tag, o balão cede espaço
+    // à esquerda para o título da fita.
+    final maxFactor = 0.70;
 
-    return Stack(
-      children: [
-        // RF04 — fita atrás do balão, de ponta a ponta, centrada na vertical.
-        if (tag != null)
-          Positioned.fill(
-            child: Center(child: TagRibbon(tag: tag!)),
-          ),
-        Align(
-          alignment: Alignment.centerRight,
-          child: GestureDetector(
-            onTap: onTap,
-            onLongPress: onLongPress,
-            child: Container(
-              constraints: BoxConstraints(
-                maxWidth: MediaQuery.of(context).size.width * maxFactor,
-              ),
-              margin: const EdgeInsets.symmetric(vertical: 3),
-              padding: isMedia
-                  ? const EdgeInsets.all(4)
-                  : const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: scheme.primaryContainer,
-                borderRadius: const BorderRadius.only(
-                  topLeft: Radius.circular(14),
-                  topRight: Radius.circular(14),
-                  bottomLeft: Radius.circular(14),
-                  bottomRight: Radius.circular(2),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return Stack(
+          children: [
+            // RF04 — fita atrás do balão, de ponta a ponta, centrada na vertical.
+            Positioned.fill(
+              child: Center(child: TagRibbon(date: message.data, tag: tag)),
+            ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: GestureDetector(
+                onTap: onTap,
+                onLongPress: onLongPress,
+                child: Container(
+                  constraints: BoxConstraints(
+                    maxWidth: constraints.maxWidth * maxFactor,
+                  ),
+                  margin: const EdgeInsets.symmetric(vertical: 3),
+                  padding: isMedia
+                      ? const EdgeInsets.all(4)
+                      : const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: scheme.primaryContainer,
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(14),
+                      topRight: Radius.circular(14),
+                      bottomLeft: Radius.circular(14),
+                      bottomRight: Radius.circular(2),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _content(context, scheme),
+                      if (message.dataEditadaManualmente)
+                        Padding(
+                          padding:
+                              EdgeInsets.only(top: 3, right: isMedia ? 6 : 0),
+                          child: Tooltip(
+                            message: 'Data editada manualmente',
+                            child: Icon(
+                              Icons.edit_calendar_outlined,
+                              size: 13,
+                              color: scheme.onPrimaryContainer
+                                  .withValues(alpha: 0.7),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _content(context, scheme),
-                  if (message.dataEditadaManualmente)
-                    Padding(
-                      padding: EdgeInsets.only(top: 3, right: isMedia ? 6 : 0),
-                      child: Tooltip(
-                        message: 'Data editada manualmente',
-                        child: Icon(
-                          Icons.edit_calendar_outlined,
-                          size: 13,
-                          color: scheme.onPrimaryContainer.withValues(alpha: 0.7),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
             ),
-          ),
-        ),
-      ],
+          ],
+        );
+      },
     );
   }
-
   Widget _content(BuildContext context, ColorScheme scheme) {
     switch (message.tipo) {
       case MessageType.texto:
@@ -210,7 +215,7 @@ class _ImageContentState extends ConsumerState<_ImageContent> {
 
   @override
   Widget build(BuildContext context) {
-    const size = 220.0;
+    const size = 200.0;
     return FutureBuilder<File?>(
       future: _future,
       builder: (context, snap) {
@@ -301,7 +306,7 @@ class _VideoContentState extends ConsumerState<_VideoContent> {
 
   @override
   Widget build(BuildContext context) {
-    const size = 220.0;
+    const size = 200.0;
     return FutureBuilder<_VideoData?>(
       future: _future,
       builder: (context, snap) {

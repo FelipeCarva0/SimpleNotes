@@ -2,16 +2,52 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/conversation.dart';
 import '../providers/conversation_providers.dart';
+import '../utils/text_normalize.dart';
 import 'chat_screen.dart';
 
-
-/// RF06 — tela inicial: lista de todas as Conversas. A busca por título
-/// (RF06.1) entra na Sprint 4; esta versão (Sprint 0) cobre listagem e o
-/// CRUD de Conversa (RF01).
-class HomeScreen extends ConsumerWidget {
+/// RF06 — tela inicial: lista de todas as Conversas, com busca por título
+/// (RF06.1) e o CRUD de Conversa (RF01).
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
-  Future<void> _createConversation(BuildContext context, WidgetRef ref) async {
+  @override
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends ConsumerState<HomeScreen> {
+  final _searchController = TextEditingController();
+  bool _searching = false;
+  String _query = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _openSearch() => setState(() => _searching = true);
+
+  void _closeSearch() {
+    _searchController.clear();
+    setState(() {
+      _searching = false;
+      _query = '';
+    });
+  }
+
+  void _clearQuery() {
+    _searchController.clear();
+    setState(() => _query = '');
+  }
+
+  /// RF06.1 — filtra por título, ignorando maiúsculas e acentos.
+  List<Conversation> _filter(List<Conversation> all) {
+    final q = normalizeText(_query.trim());
+    if (q.isEmpty) return all;
+    return all.where((c) => normalizeText(c.titulo).contains(q)).toList();
+  }
+
+  Future<void> _createConversation() async {
     final controller = TextEditingController();
     final titulo = await showDialog<String>(
       context: context,
@@ -35,11 +71,11 @@ class HomeScreen extends ConsumerWidget {
       ),
     );
 
-    if (titulo == null || titulo.isEmpty || !context.mounted) return;
+    if (titulo == null || titulo.isEmpty || !mounted) return;
 
     final conversation =
         await ref.read(conversationRepositoryProvider).create(titulo: titulo);
-    if (!context.mounted) return;
+    if (!mounted) return;
 
     Navigator.push(
       context,
@@ -49,12 +85,7 @@ class HomeScreen extends ConsumerWidget {
     );
   }
 
-  Future<void> _renameConversation(
-    BuildContext context,
-    WidgetRef ref,
-    String conversationId,
-    String currentTitle,
-  ) async {
+  Future<void> _renameConversation(String id, String currentTitle) async {
     final controller = TextEditingController(text: currentTitle);
     final newTitle = await showDialog<String>(
       context: context,
@@ -77,20 +108,13 @@ class HomeScreen extends ConsumerWidget {
     if (newTitle == null ||
         newTitle.isEmpty ||
         newTitle == currentTitle ||
-        !context.mounted) {
+        !mounted) {
       return;
     }
-    await ref
-        .read(conversationRepositoryProvider)
-        .updateTitulo(conversationId, newTitle);
+    await ref.read(conversationRepositoryProvider).updateTitulo(id, newTitle);
   }
 
-  Future<void> _deleteConversation(
-    BuildContext context,
-    WidgetRef ref,
-    String conversationId,
-    String titulo,
-  ) async {
+  Future<void> _deleteConversation(String id, String titulo) async {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -110,42 +134,93 @@ class HomeScreen extends ConsumerWidget {
         ],
       ),
     );
-    if (confirm != true || !context.mounted) return;
-    await ref.read(conversationRepositoryProvider).delete(conversationId);
+    if (confirm != true || !mounted) return;
+    await ref.read(conversationRepositoryProvider).delete(id);
+  }
+
+  PreferredSizeWidget _buildAppBar() {
+    if (!_searching) {
+      return AppBar(
+        title: const Text('Arquivo'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.search),
+            tooltip: 'Buscar conversa',
+            onPressed: _openSearch,
+          ),
+        ],
+      );
+    }
+
+    return AppBar(
+      leading: IconButton(
+        icon: const Icon(Icons.arrow_back),
+        tooltip: 'Fechar busca',
+        onPressed: _closeSearch,
+      ),
+      title: TextField(
+        controller: _searchController,
+        autofocus: true,
+        textInputAction: TextInputAction.search,
+        decoration: const InputDecoration(
+          hintText: 'Buscar conversa',
+          border: InputBorder.none,
+        ),
+        onChanged: (value) => setState(() => _query = value),
+      ),
+      actions: [
+        if (_query.isNotEmpty)
+          IconButton(
+            icon: const Icon(Icons.close),
+            tooltip: 'Limpar',
+            onPressed: _clearQuery,
+          ),
+      ],
+    );
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final conversationsAsync = ref.watch(conversationsStreamProvider);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Arquivo'),
-      ),
-      body: conversationsAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (e, _) => Center(child: Text('Erro: $e')),
-        data: (conversations) {
-          if (conversations.isEmpty) {
-            return const Center(child: Text('Nenhuma conversa ainda.'));
-          }
-          return ListView.builder(
-            itemCount: conversations.length,
-            itemBuilder: (context, index) =>
-                _ConversationTile(
-              conversation: conversations[index],
-              onRename: (id, titulo) =>
-                  _renameConversation(context, ref, id, titulo),
-              onDelete: (id, titulo) =>
-                  _deleteConversation(context, ref, id, titulo),
-            ),
-          );
-        },
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _createConversation(context, ref),
-        tooltip: 'Nova conversa',
-        child: const Icon(Icons.add),
+    return PopScope(
+      // Com a busca aberta, "voltar" fecha a busca em vez de sair da tela.
+      canPop: !_searching,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _closeSearch();
+      },
+      child: Scaffold(
+        appBar: _buildAppBar(),
+        body: conversationsAsync.when(
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (e, _) => Center(child: Text('Erro: $e')),
+          data: (all) {
+            if (all.isEmpty) {
+              return const Center(child: Text('Nenhuma conversa ainda.'));
+            }
+            final conversations = _filter(all);
+            if (conversations.isEmpty) {
+              return const Center(
+                child: Text('Nenhuma conversa encontrada.'),
+              );
+            }
+            return ListView.builder(
+              itemCount: conversations.length,
+              itemBuilder: (context, index) => _ConversationTile(
+                conversation: conversations[index],
+                onRename: _renameConversation,
+                onDelete: _deleteConversation,
+              ),
+            );
+          },
+        ),
+        floatingActionButton: _searching
+            ? null
+            : FloatingActionButton(
+                onPressed: _createConversation,
+                tooltip: 'Nova conversa',
+                child: const Icon(Icons.add),
+              ),
       ),
     );
   }
