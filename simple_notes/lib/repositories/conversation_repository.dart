@@ -324,4 +324,50 @@ class ConversationRepository {
         await (db.update(db.messages)..where((m) => m.id.equals(messageId)))
             .write(MessagesCompanion(tagId: Value(tagId)));
       }
+
+      // ---------------------------------------------------------------------
+      // Mensagem — reordenação — Sprint 4 (A4)
+      // ---------------------------------------------------------------------
+
+      /// Move a Mensagem para o índice [newIndex] da conversa (0 = primeira,
+      /// N-1 = última), renumerando `position` de 0 a N-1.
+      ///
+      /// Devolve o índice ANTERIOR da mensagem (usado pelo "Desfazer"), ou null
+      /// se nada mudou (mensagem inexistente ou já estava nessa posição).
+      ///
+      /// Escreve APENAS `position`: `data`, `dataEditadaManualmente`, `tagId` e o
+      /// `atualizadoEm` da Conversa permanecem intactos.
+      Future<int?> reorderMessage(String messageId, int newIndex) {
+        return db.transaction<int?>(() async {
+          final row = await (db.select(db.messages)
+                ..where((m) => m.id.equals(messageId)))
+              .getSingleOrNull();
+          if (row == null) return null;
+
+          final rows = await (db.select(db.messages)
+                ..where((m) => m.conversationId.equals(row.conversationId))
+                ..orderBy([(m) => OrderingTerm(expression: m.position)]))
+              .get();
+
+          final oldIndex = rows.indexWhere((m) => m.id == messageId);
+          if (oldIndex < 0) return null;
+
+          final last = rows.length - 1;
+          final target = newIndex < 0 ? 0 : (newIndex > last ? last : newIndex);
+          if (target == oldIndex) return null;
+
+          final reordered = [...rows];
+          final moved = reordered.removeAt(oldIndex);
+          reordered.insert(target, moved);
+
+          for (var i = 0; i < reordered.length; i++) {
+            if (reordered[i].position == i) continue;
+            await (db.update(db.messages)
+                  ..where((m) => m.id.equals(reordered[i].id)))
+                .write(MessagesCompanion(position: Value(i)));
+          }
+
+          return oldIndex;
+        });
+      }
 }
