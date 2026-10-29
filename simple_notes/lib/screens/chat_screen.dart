@@ -735,35 +735,28 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     );
   }
 
-  /// RF02.5 — exclusão explícita, distinta de qualquer edição de conteúdo.
-  Future<void> _deleteMessage(Message message) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Excluir mensagem?'),
-        content: const Text('Essa ação não pode ser desfeita.'),
-        actions: [
-          PopupMenuButton<String>(
-            onSelected: _onMenuSelected,
-            itemBuilder: (_) => const [
-              // TEMPORÁRIOS (Etapa 4.2): somem na 4.3, quando entra "Pesquisar".
-              PopupMenuItem(
-                value: 'debug_first',
-                child: Text('[teste] Ir ao início'),
-              ),
-              PopupMenuItem(
-                value: 'debug_last',
-                child: Text('[teste] Ir ao fim'),
-              ),
-              PopupMenuItem(value: 'tags', child: Text('Gerenciar tags')),
-            ],
-          ),
-        ],
-      ),
-    );
-    if (confirm != true) return;
-    await ref.read(conversationRepositoryProvider).deleteMessage(message.id);
-  }
+ /// RF02.5 — exclusão explícita, distinta de qualquer edição de conteúdo.
+Future<void> _deleteMessage(Message message) async {
+  final confirm = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Excluir mensagem?'),
+      content: const Text('Essa ação não pode ser desfeita.'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('Cancelar'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text('Excluir'),
+        ),
+      ],
+    ),
+  );
+  if (confirm != true) return;
+  await ref.read(conversationRepositoryProvider).deleteMessage(message.id);
+}
 
   void _showMessageActions(Message message) {
     showModalBottomSheet(
