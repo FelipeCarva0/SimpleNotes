@@ -29,16 +29,18 @@ class ConversationRepository {
   }
 
   Future<Conversation?> getById(String id) async {
-    final row = await (db.select(db.conversations)
-          ..where((c) => c.id.equals(id)))
-        .getSingleOrNull();
+    final row = await (db.select(
+      db.conversations,
+    )..where((c) => c.id.equals(id))).getSingleOrNull();
     return row == null ? null : _toModel(row);
   }
 
   Future<Conversation> create({required String titulo}) async {
     final id = _uuid.v4();
     final now = DateTime.now();
-    await db.into(db.conversations).insert(
+    await db
+        .into(db.conversations)
+        .insert(
           ConversationsCompanion.insert(
             id: id,
             titulo: titulo,
@@ -66,22 +68,25 @@ class ConversationRepository {
   /// Exclui a Conversa, suas Mensagens e a pasta de mídia no filesystem.
   Future<void> delete(String id) async {
     await db.transaction(() async {
-      await (db.delete(db.messages)..where((m) => m.conversationId.equals(id)))
-          .go();
-      await (db.delete(db.tags)..where((t) => t.conversationId.equals(id))).go();
+      await (db.delete(
+        db.messages,
+      )..where((m) => m.conversationId.equals(id))).go();
+      await (db.delete(
+        db.tags,
+      )..where((t) => t.conversationId.equals(id))).go();
       await (db.delete(db.conversations)..where((c) => c.id.equals(id))).go();
     });
     await storage.deleteConversationFolder(id);
   }
 
   Conversation _toModel(ConversationRow row) => Conversation(
-        id: row.id,
-        titulo: row.titulo,
-        criadoEm: row.criadoEm,
-        atualizadoEm: row.atualizadoEm,
-        protegidoPorSenha: row.protegidoPorSenha,
-        rascunho: row.rascunho,
-      );
+    id: row.id,
+    titulo: row.titulo,
+    criadoEm: row.criadoEm,
+    atualizadoEm: row.atualizadoEm,
+    protegidoPorSenha: row.protegidoPorSenha,
+    rascunho: row.rascunho,
+  );
 
   // ---------------------------------------------------------------------
   // Mensagem — texto (RF02, RF03) — Sprint 1
@@ -115,9 +120,9 @@ class ConversationRepository {
   ///
   /// Não faz nada se o rascunho estiver vazio (só espaços em branco).
   Future<void> sendDraft(String conversationId) async {
-    final conversation = await (db.select(db.conversations)
-          ..where((c) => c.id.equals(conversationId)))
-        .getSingle();
+    final conversation = await (db.select(
+      db.conversations,
+    )..where((c) => c.id.equals(conversationId))).getSingle();
 
     final content = conversation.rascunho.trim();
     if (content.isEmpty) return;
@@ -128,7 +133,9 @@ class ConversationRepository {
     await db.transaction(() async {
       final position = await _nextPosition(conversationId);
 
-      await db.into(db.messages).insert(
+      await db
+          .into(db.messages)
+          .insert(
             MessagesCompanion.insert(
               id: _uuid.v4(),
               conversationId: conversationId,
@@ -139,9 +146,9 @@ class ConversationRepository {
             ),
           );
 
-      await (db.update(db.conversations)
-            ..where((c) => c.id.equals(conversationId)))
-          .write(
+      await (db.update(
+        db.conversations,
+      )..where((c) => c.id.equals(conversationId))).write(
         ConversationsCompanion(
           rascunho: const Value(''),
           atualizadoEm: Value(now),
@@ -155,15 +162,16 @@ class ConversationRepository {
   /// este método simplesmente nunca escrever a coluna `data` aqui — não há
   /// heurística de diff/similaridade envolvida (ver nota de RF03 na spec).
   Future<void> updateMessageContent(String messageId, String newContent) async {
-    await (db.update(db.messages)..where((m) => m.id.equals(messageId)))
-        .write(MessagesCompanion(conteudoTexto: Value(newContent)));
+    await (db.update(db.messages)..where((m) => m.id.equals(messageId))).write(
+      MessagesCompanion(conteudoTexto: Value(newContent)),
+    );
   }
 
   /// RF02.5 — exclusão explícita e distinta de qualquer edição de conteúdo.
   Future<void> deleteMessage(String messageId) async {
-    final row = await (db.select(db.messages)
-          ..where((m) => m.id.equals(messageId)))
-        .getSingleOrNull();
+    final row = await (db.select(
+      db.messages,
+    )..where((m) => m.id.equals(messageId))).getSingleOrNull();
     if (row == null) return;
 
     await (db.delete(db.messages)..where((m) => m.id.equals(messageId))).go();
@@ -185,189 +193,283 @@ class ConversationRepository {
   }
 
   Future<int> _nextPosition(String conversationId) async {
-    final maxRow = await (db.selectOnly(db.messages)
-          ..addColumns([db.messages.position.max()])
-          ..where(db.messages.conversationId.equals(conversationId)))
-        .getSingleOrNull();
+    final maxRow =
+        await (db.selectOnly(db.messages)
+              ..addColumns([db.messages.position.max()])
+              ..where(db.messages.conversationId.equals(conversationId)))
+            .getSingleOrNull();
     return (maxRow?.read(db.messages.position.max()) ?? -1) + 1;
   }
 
   Message _messageToModel(MessageRow row) => Message(
-        id: row.id,
-        conversationId: row.conversationId,
-        tagId: row.tagId,
-        position: row.position,
-        tipo: row.tipo,
-        conteudoTexto: row.conteudoTexto,
-        arquivoPath: row.arquivoPath,
-        arquivoNomeOriginal: row.arquivoNomeOriginal,
-        arquivoNomeExibicao: row.arquivoNomeExibicao,
-        arquivoMimeType: row.arquivoMimeType,
-        arquivoTamanhoBytes: row.arquivoTamanhoBytes,
-        data: row.data,
-        dataEditadaManualmente: row.dataEditadaManualmente,
+    id: row.id,
+    conversationId: row.conversationId,
+    tagId: row.tagId,
+    position: row.position,
+    tipo: row.tipo,
+    conteudoTexto: row.conteudoTexto,
+    arquivoPath: row.arquivoPath,
+    arquivoNomeOriginal: row.arquivoNomeOriginal,
+    arquivoNomeExibicao: row.arquivoNomeExibicao,
+    arquivoMimeType: row.arquivoMimeType,
+    arquivoTamanhoBytes: row.arquivoTamanhoBytes,
+    data: row.data,
+    dataEditadaManualmente: row.dataEditadaManualmente,
+  );
+
+  // ---------------------------------------------------------------------
+  // Mensagem — anexos (RF02.3, RF02.4, RF02.5) — Sprint 2
+  // ---------------------------------------------------------------------
+
+  /// RF02.3 — copia o arquivo para o storage e cria uma Mensagem de anexo
+  /// com a data de hoje. Se o banco falhar, remove o arquivo copiado para
+  /// não deixar órfão.
+  Future<void> sendAttachment({
+    required String conversationId,
+    required MessageType tipo,
+    required File file,
+    required String nomeOriginal,
+  }) async {
+    assert(tipo != MessageType.texto, 'Use sendDraft para texto');
+
+    final stored = await storage.saveFile(file, conversationId);
+
+    try {
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+
+      await db.transaction(() async {
+        final position = await _nextPosition(conversationId);
+
+        await db
+            .into(db.messages)
+            .insert(
+              MessagesCompanion.insert(
+                id: _uuid.v4(),
+                conversationId: conversationId,
+                position: position,
+                tipo: Value(tipo),
+                arquivoPath: Value(stored.relativePath),
+                arquivoNomeOriginal: Value(nomeOriginal),
+                arquivoNomeExibicao: Value(nomeOriginal),
+                arquivoMimeType: Value(stored.mimeType),
+                arquivoTamanhoBytes: Value(stored.sizeBytes),
+                data: today,
+              ),
+            );
+
+        await (db.update(db.conversations)
+              ..where((c) => c.id.equals(conversationId)))
+            .write(ConversationsCompanion(atualizadoEm: Value(now)));
+      });
+    } catch (_) {
+      await storage.delete(stored.relativePath);
+      rethrow;
+    }
+  }
+
+  /// RF02.4 — altera só o nome de exibição; `data` intocada.
+  Future<void> renameAttachment(String messageId, String novoNome) async {
+    await (db.update(db.messages)..where((m) => m.id.equals(messageId))).write(
+      MessagesCompanion(arquivoNomeExibicao: Value(novoNome)),
+    );
+  }
+
+  /// RF02.4 — troca o arquivo físico mantendo id, posição, tag, tipo, nome de
+  /// exibição e `data`. O arquivo antigo só é apagado depois que o banco
+  /// aceitou a atualização.
+  Future<void> replaceAttachmentFile({
+    required String messageId,
+    required File newFile,
+    required String nomeOriginal,
+  }) async {
+    final row = await (db.select(
+      db.messages,
+    )..where((m) => m.id.equals(messageId))).getSingle();
+
+    final stored = await storage.saveFile(newFile, row.conversationId);
+
+    try {
+      await (db.update(
+        db.messages,
+      )..where((m) => m.id.equals(messageId))).write(
+        MessagesCompanion(
+          arquivoPath: Value(stored.relativePath),
+          arquivoNomeOriginal: Value(nomeOriginal),
+          arquivoMimeType: Value(stored.mimeType),
+          arquivoTamanhoBytes: Value(stored.sizeBytes),
+        ),
       );
+    } catch (_) {
+      await storage.delete(stored.relativePath);
+      rethrow;
+    }
 
-      // ---------------------------------------------------------------------
-      // Mensagem — anexos (RF02.3, RF02.4, RF02.5) — Sprint 2
-      // ---------------------------------------------------------------------
+    final oldPath = row.arquivoPath;
+    if (oldPath != null) await storage.delete(oldPath);
+  }
 
-      /// RF02.3 — copia o arquivo para o storage e cria uma Mensagem de anexo
-      /// com a data de hoje. Se o banco falhar, remove o arquivo copiado para
-      /// não deixar órfão.
-      Future<void> sendAttachment({
-        required String conversationId,
-        required MessageType tipo,
-        required File file,
-        required String nomeOriginal,
-      }) async {
-        assert(tipo != MessageType.texto, 'Use sendDraft para texto');
+  // ---------------------------------------------------------------------
+  // Mensagem — tag (RF04) — Sprint 3
+  // ---------------------------------------------------------------------
 
-        final stored = await storage.saveFile(file, conversationId);
+  /// RF04 — define, substitui ou remove (tagId == null) a Tag de uma
+  /// Mensagem. Cada Mensagem tem no máximo uma Tag.
+  ///
+  /// Escreve APENAS `tag_id`: `data`, `dataEditadaManualmente` e o
+  /// `atualizadoEm` da Conversa permanecem intactos.
+  Future<void> setMessageTag(String messageId, String? tagId) async {
+    if (tagId != null) {
+      final message = await (db.select(
+        db.messages,
+      )..where((m) => m.id.equals(messageId))).getSingleOrNull();
+      if (message == null) return;
 
-        try {
-          final now = DateTime.now();
-          final today = DateTime(now.year, now.month, now.day);
-
-          await db.transaction(() async {
-            final position = await _nextPosition(conversationId);
-
-            await db.into(db.messages).insert(
-                  MessagesCompanion.insert(
-                    id: _uuid.v4(),
-                    conversationId: conversationId,
-                    position: position,
-                    tipo: Value(tipo),
-                    arquivoPath: Value(stored.relativePath),
-                    arquivoNomeOriginal: Value(nomeOriginal),
-                    arquivoNomeExibicao: Value(nomeOriginal),
-                    arquivoMimeType: Value(stored.mimeType),
-                    arquivoTamanhoBytes: Value(stored.sizeBytes),
-                    data: today,
-                  ),
-                );
-
-            await (db.update(db.conversations)
-                  ..where((c) => c.id.equals(conversationId)))
-                .write(ConversationsCompanion(atualizadoEm: Value(now)));
-          });
-        } catch (_) {
-          await storage.delete(stored.relativePath);
-          rethrow;
-        }
+      final tag = await (db.select(
+        db.tags,
+      )..where((t) => t.id.equals(tagId))).getSingleOrNull();
+      if (tag == null) {
+        throw StateError('A tag selecionada não existe mais.');
       }
-
-      /// RF02.4 — altera só o nome de exibição; `data` intocada.
-      Future<void> renameAttachment(String messageId, String novoNome) async {
-        await (db.update(db.messages)..where((m) => m.id.equals(messageId)))
-            .write(MessagesCompanion(arquivoNomeExibicao: Value(novoNome)));
+      if (tag.conversationId != message.conversationId) {
+        throw StateError('Esta tag pertence a outra conversa.');
       }
+    }
 
-      /// RF02.4 — troca o arquivo físico mantendo id, posição, tag, tipo, nome de
-      /// exibição e `data`. O arquivo antigo só é apagado depois que o banco
-      /// aceitou a atualização.
-      Future<void> replaceAttachmentFile({
-        required String messageId,
-        required File newFile,
-        required String nomeOriginal,
-      }) async {
-        final row = await (db.select(db.messages)
-              ..where((m) => m.id.equals(messageId)))
-            .getSingle();
+    await (db.update(db.messages)..where((m) => m.id.equals(messageId))).write(
+      MessagesCompanion(tagId: Value(tagId)),
+    );
+  }
 
-        final stored = await storage.saveFile(newFile, row.conversationId);
+  // ---------------------------------------------------------------------
+  // Mensagem — reordenação — Sprint 4 (A4)
+  // ---------------------------------------------------------------------
 
-        try {
-          await (db.update(db.messages)..where((m) => m.id.equals(messageId))).write(
-            MessagesCompanion(
-              arquivoPath: Value(stored.relativePath),
-              arquivoNomeOriginal: Value(nomeOriginal),
-              arquivoMimeType: Value(stored.mimeType),
-              arquivoTamanhoBytes: Value(stored.sizeBytes),
-            ),
-          );
-        } catch (_) {
-          await storage.delete(stored.relativePath);
-          rethrow;
-        }
+  /// Move a Mensagem para o índice [newIndex] da conversa (0 = primeira,
+  /// N-1 = última), renumerando `position` de 0 a N-1.
+  ///
+  /// Devolve o índice ANTERIOR da mensagem (usado pelo "Desfazer"), ou null
+  /// se nada mudou (mensagem inexistente ou já estava nessa posição).
+  ///
+  /// Escreve APENAS `position`: `data`, `dataEditadaManualmente`, `tagId` e o
+  /// `atualizadoEm` da Conversa permanecem intactos.
+  Future<int?> reorderMessage(String messageId, int newIndex) {
+    return db.transaction<int?>(() async {
+      final row = await (db.select(
+        db.messages,
+      )..where((m) => m.id.equals(messageId))).getSingleOrNull();
+      if (row == null) return null;
 
-        final oldPath = row.arquivoPath;
-        if (oldPath != null) await storage.delete(oldPath);
-      }
-
-      // ---------------------------------------------------------------------
-      // Mensagem — tag (RF04) — Sprint 3
-      // ---------------------------------------------------------------------
-
-      /// RF04 — define, substitui ou remove (tagId == null) a Tag de uma
-      /// Mensagem. Cada Mensagem tem no máximo uma Tag.
-      ///
-      /// Escreve APENAS `tag_id`: `data`, `dataEditadaManualmente` e o
-      /// `atualizadoEm` da Conversa permanecem intactos.
-      Future<void> setMessageTag(String messageId, String? tagId) async {
-        if (tagId != null) {
-          final message = await (db.select(db.messages)
-                ..where((m) => m.id.equals(messageId)))
-              .getSingleOrNull();
-          if (message == null) return;
-
-          final tag = await (db.select(db.tags)..where((t) => t.id.equals(tagId)))
-              .getSingleOrNull();
-          if (tag == null) {
-            throw StateError('A tag selecionada não existe mais.');
-          }
-          if (tag.conversationId != message.conversationId) {
-            throw StateError('Esta tag pertence a outra conversa.');
-          }
-        }
-
-        await (db.update(db.messages)..where((m) => m.id.equals(messageId)))
-            .write(MessagesCompanion(tagId: Value(tagId)));
-      }
-
-      // ---------------------------------------------------------------------
-      // Mensagem — reordenação — Sprint 4 (A4)
-      // ---------------------------------------------------------------------
-
-      /// Move a Mensagem para o índice [newIndex] da conversa (0 = primeira,
-      /// N-1 = última), renumerando `position` de 0 a N-1.
-      ///
-      /// Devolve o índice ANTERIOR da mensagem (usado pelo "Desfazer"), ou null
-      /// se nada mudou (mensagem inexistente ou já estava nessa posição).
-      ///
-      /// Escreve APENAS `position`: `data`, `dataEditadaManualmente`, `tagId` e o
-      /// `atualizadoEm` da Conversa permanecem intactos.
-      Future<int?> reorderMessage(String messageId, int newIndex) {
-        return db.transaction<int?>(() async {
-          final row = await (db.select(db.messages)
-                ..where((m) => m.id.equals(messageId)))
-              .getSingleOrNull();
-          if (row == null) return null;
-
-          final rows = await (db.select(db.messages)
+      final rows =
+          await (db.select(db.messages)
                 ..where((m) => m.conversationId.equals(row.conversationId))
                 ..orderBy([(m) => OrderingTerm(expression: m.position)]))
               .get();
 
-          final oldIndex = rows.indexWhere((m) => m.id == messageId);
-          if (oldIndex < 0) return null;
+      final oldIndex = rows.indexWhere((m) => m.id == messageId);
+      if (oldIndex < 0) return null;
 
-          final last = rows.length - 1;
-          final target = newIndex < 0 ? 0 : (newIndex > last ? last : newIndex);
-          if (target == oldIndex) return null;
+      final last = rows.length - 1;
+      final target = newIndex < 0 ? 0 : (newIndex > last ? last : newIndex);
+      if (target == oldIndex) return null;
 
-          final reordered = [...rows];
-          final moved = reordered.removeAt(oldIndex);
-          reordered.insert(target, moved);
+      final reordered = [...rows];
+      final moved = reordered.removeAt(oldIndex);
+      reordered.insert(target, moved);
 
-          for (var i = 0; i < reordered.length; i++) {
-            if (reordered[i].position == i) continue;
-            await (db.update(db.messages)
-                  ..where((m) => m.id.equals(reordered[i].id)))
-                .write(MessagesCompanion(position: Value(i)));
-          }
-
-          return oldIndex;
-        });
+      for (var i = 0; i < reordered.length; i++) {
+        if (reordered[i].position == i) continue;
+        await (db.update(db.messages)
+              ..where((m) => m.id.equals(reordered[i].id)))
+            .write(MessagesCompanion(position: Value(i)));
       }
+
+      return oldIndex;
+    });
+  }
+  // ---------------------------------------------------------------------
+  // Ações em lote sobre resultados de busca — Sprint 4 (4.6)
+  // ---------------------------------------------------------------------
+
+  /// Define (ou remove, com [tagId] == null) a Tag de várias Mensagens de
+  /// uma vez. Valida que a Tag existe e pertence à mesma conversa da
+  /// primeira mensagem antes de aplicar. Escreve **apenas `tag_id`**;
+  /// `data`, `dataEditadaManualmente`, `position` e `atualizadoEm` da
+  /// Conversa ficam intactos. Operação idempotente (ids inexistentes são
+  /// ignorados).
+  Future<void> setMessageTagMany(
+    Iterable<String> messageIds,
+    String? tagId,
+  ) async {
+    final ids = messageIds.toSet();
+    if (ids.isEmpty) return;
+
+    if (tagId != null) {
+      // Descobre a conversa a partir da primeira mensagem existente e valida
+      // que a Tag pertence a ela.
+      final first =
+          await (db.select(db.messages)
+                ..where((m) => m.id.isIn(ids))
+                ..limit(1))
+              .getSingleOrNull();
+      if (first == null) return;
+
+      final tag = await (db.select(
+        db.tags,
+      )..where((t) => t.id.equals(tagId))).getSingleOrNull();
+      if (tag == null) {
+        throw StateError('A tag selecionada não existe mais.');
+      }
+      if (tag.conversationId != first.conversationId) {
+        throw StateError('Esta tag pertence a outra conversa.');
+      }
+    }
+
+    await (db.update(db.messages)..where((m) => m.id.isIn(ids))).write(
+      MessagesCompanion(tagId: Value(tagId)),
+    );
+  }
+
+  /// Sobrescreve manualmente a `data` de várias Mensagens de uma vez
+  /// (RF02.6/RF03). Marca `dataEditadaManualmente = true` em todas. Escreve
+  /// **apenas `data` e `dataEditadaManualmente`**; `tagId`, `position` e
+  /// `atualizadoEm` da Conversa ficam intactos.
+  Future<void> setMessageDateMany(
+    Iterable<String> messageIds,
+    DateTime date,
+  ) async {
+    final ids = messageIds.toSet();
+    if (ids.isEmpty) return;
+    final dateOnly = DateTime(date.year, date.month, date.day);
+
+    await (db.update(db.messages)..where((m) => m.id.isIn(ids))).write(
+      MessagesCompanion(
+        data: Value(dateOnly),
+        dataEditadaManualmente: const Value(true),
+      ),
+    );
+  }
+
+  /// Exclui várias Mensagens de uma vez. Apaga os registros em transação e,
+  /// depois, os arquivos físicos correspondentes do storage (se houver).
+  /// Não altera `atualizadoEm` da Conversa (a exclusão em si já é uma
+  /// operação de conteúdo; o padrão vigente é o mesmo de `deleteMessage`).
+  Future<void> deleteMessagesMany(Iterable<String> messageIds) async {
+    final ids = messageIds.toSet();
+    if (ids.isEmpty) return;
+
+    final rows = await (db.select(
+      db.messages,
+    )..where((m) => m.id.isIn(ids))).get();
+    if (rows.isEmpty) return;
+
+    await db.transaction(() async {
+      await (db.delete(db.messages)..where((m) => m.id.isIn(ids))).go();
+    });
+
+    for (final row in rows) {
+      final path = row.arquivoPath;
+      if (path != null) await storage.delete(path);
+    }
+  }
 }

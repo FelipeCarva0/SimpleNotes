@@ -22,6 +22,7 @@ import '../utils/tag_colors.dart';
 import '../widgets/highlighted_text.dart';
 import '../search/message_filter.dart';
 import '../models/conversation.dart';
+import 'search_results_screen.dart';
 
 /// Tela de chat de uma Conversa (RF01, RF02, RF03) — Sprint 1: só mensagens
 /// de texto. Anexos de arquivo (RF02.3) entram na Sprint 2 e o gesto de
@@ -608,9 +609,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       case SearchMode.wordInConversation:
         _startWordSearch(request.query ?? '');
       case SearchMode.resultsList:
+        await _openResultsList(MessageFilter(text: request.query ?? ''));
       case SearchMode.dateRange:
-        // Bloco 2 (4.5/4.6).
-        _showSnack('Em breve.');
+        await _openDateRangeResults();
     }
   }
 
@@ -787,6 +788,102 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       matches: hit.matches,
       currentMatch: hitIdx == _currentHit ? _currentOccurrence : -1,
       originalNameOnly: hit.matches.isEmpty,
+    );
+  }
+  // ---------------------------------------------------------------------
+  // Lista de resultados (4.5) e faixa de datas com lote (4.6)
+  // ---------------------------------------------------------------------
+
+  Future<void> _openResultsList(MessageFilter filter) async {
+    final messages = ref
+        .read(messagesStreamProvider(widget.conversationId))
+        .valueOrNull;
+    if (messages == null || messages.isEmpty) {
+      _showSnack('Esta conversa ainda não tem mensagens.');
+      return;
+    }
+
+    // Feedback rápido quando o texto não casa com nada (evita abrir uma
+    // tela vazia sem explicação).
+    if (filter.hasText) {
+      final preview = searchMessages(messages, filter);
+      if (preview.isEmpty) {
+        _showSnack('Nenhuma mensagem com "${filter.text}".');
+        return;
+      }
+    }
+
+    final hit = await Navigator.push<SearchHit>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SearchResultsScreen(
+          conversationId: widget.conversationId,
+          initialFilter: filter,
+        ),
+      ),
+    );
+    if (hit == null || !mounted) return;
+
+    // `hit.index` é cronológico; `_goToMessage` converte para o índice
+    // invertido da lista. Usamos a contagem atual do stream.
+    final current =
+        ref.read(messagesStreamProvider(widget.conversationId)).valueOrNull ??
+        messages;
+    _goToMessage(
+      index: hit.index,
+      total: current.length,
+      messageId: hit.message.id,
+    );
+  }
+
+  Future<void> _openDateRangeResults() async {
+    final messages = ref
+        .read(messagesStreamProvider(widget.conversationId))
+        .valueOrNull;
+    if (messages == null || messages.isEmpty) {
+      _showSnack('Esta conversa ainda não tem mensagens.');
+      return;
+    }
+
+    // Período coberto pela conversa, calculado sem assumir ordem por data
+    // (a data pode ter sido editada manualmente e ficar fora de sequência).
+    DateTime dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
+    var first = dateOnly(messages.first.data);
+    var last = first;
+    for (final m in messages) {
+      final d = dateOnly(m.data);
+      if (d.isBefore(first)) first = d;
+      if (d.isAfter(last)) last = d;
+    }
+
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: first,
+      lastDate: last,
+      initialDateRange: DateTimeRange(start: first, end: last),
+      helpText: 'Faixa de datas',
+      saveText: 'Aplicar',
+    );
+    if (picked == null || !mounted) return;
+
+    final hit = await Navigator.push<SearchHit>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SearchResultsScreen(
+          conversationId: widget.conversationId,
+          initialFilter: MessageFilter(from: picked.start, to: picked.end),
+        ),
+      ),
+    );
+    if (hit == null || !mounted) return;
+
+    final current =
+        ref.read(messagesStreamProvider(widget.conversationId)).valueOrNull ??
+        messages;
+    _goToMessage(
+      index: hit.index,
+      total: current.length,
+      messageId: hit.message.id,
     );
   }
 
