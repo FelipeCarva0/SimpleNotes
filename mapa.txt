@@ -1,0 +1,415 @@
+================================================================================
+MAPA DO PROJETO — ARQUIVO (pasta: simple_notes) — Flutter
+Spec: v5.1 | Schema drift: v4 | Estado: Sprint 3 concluída, Sprint 4 em andamento
+================================================================================
+Objetivo deste arquivo: referência rápida para localizar onde alterar sem reler
+o projeto inteiro. Assinaturas = o que existe hoje no código enviado.
+
+--------------------------------------------------------------------------------
+0. RESUMO DA APLICAÇÃO
+--------------------------------------------------------------------------------
+- App de chat-consigo-mesmo (offline) para arquivar texto e mídia.
+- Entidades: Conversa (Conversations), Mensagem (Messages), Tag (Tags).
+- Mensagem: tipo {texto, imagem, video, audio, documento}; no máx. 1 Tag;
+  `data` só dia (sem hora), imutável por edição; `position` define a ordem.
+- Tag pertence a UMA Conversa; nome normalizado MAIÚSCULAS, único por conversa.
+- Stack: Riverpod 2.x, drift/SQLite, path_provider, image_picker, file_picker,
+  record, video_thumbnail, open_filex, scrollable_positioned_list, mime, uuid.
+- Locale fixo pt_BR. Tema Material3 seed indigo.
+- Arquivos binários em <docs>/media/<conversationId>/<uuid>.<ext>;
+  thumbs de vídeo em <docs>/media_thumbs/<uuid>.jpg; BD: <docs>/arquivo.sqlite.
+
+--------------------------------------------------------------------------------
+1. ESTRUTURA DE DIRETÓRIOS (real)
+--------------------------------------------------------------------------------
+lib/
+├── main.dart
+├── app.dart
+├── SPRINT_3_CHANGES.md
+├── database/
+│   ├── app_database.dart          # AppDatabase, migrações, PRAGMA FK
+│   ├── app_database.g.dart        # GERADO (build_runner) — não editar
+│   └── tables.dart                # MessageType, Tags, Conversations, Messages
+├── models/
+│   ├── conversation.dart
+│   ├── message.dart
+│   └── tag.dart
+├── repositories/
+│   ├── conversation_repository.dart   # Conversa + Mensagem (texto/anexo/tag/ordem)
+│   └── tag_repository.dart
+├── providers/
+│   ├── conversation_providers.dart
+│   └── tag_providers.dart
+├── services/
+│   └── attachment_service.dart    # câmera/galeria/arquivos/gravador + captura perdida
+├── storage/
+│   └── media_storage.dart         # filesystem de mídia + thumbs
+├── search/
+│   ├── message_filter.dart        # critérios (RF05)
+│   └── message_search.dart        # searchMessages, firstIndexOnDate
+├── screens/
+│   ├── home_screen.dart           # lista de Conversas + busca por título
+│   ├── chat_screen.dart           # chat (maior arquivo; ver seção 4)
+│   └── tags_screen.dart           # gerenciar tags da conversa
+├── widgets/
+│   ├── message_bubble.dart
+│   ├── message_details_sheet.dart
+│   ├── tag_chip.dart
+│   ├── tag_ribbon.dart
+│   ├── tag_picker_sheet.dart
+│   ├── tag_editor_dialog.dart
+│   ├── attachment_picker_sheet.dart
+│   ├── audio_recorder_dialog.dart
+│   ├── search_options_sheet.dart
+│   └── lost_capture_gate.dart
+├── utils/
+│   ├── format.dart                # formatBytes, formatDate
+│   ├── tag_colors.dart            # kTagPalette, tagColorFromHex
+│   └── text_normalize.dart        # normalizeText, findMatches, MatchRange
+└── diff/
+    └── line_diff_engine.dart      # LEGADO, sem uso no fluxo (candidato a remoção)
+android/app/src/main/AndroidManifest.xml  # permissões CAMERA, RECORD_AUDIO,
+                                          # READ_MEDIA_*, queries VIEW */*
+pubspec.yaml; assets/icon/logo.png
+(NÃO existe theme/app_theme.dart, apesar de constar na spec)
+
+--------------------------------------------------------------------------------
+2. CAMADA DE DADOS
+--------------------------------------------------------------------------------
+[database/tables.dart]
+  enum MessageType { texto, imagem, video, audio, documento }   // persistido por índice: só adicionar ao final
+  class Tags extends Table          (@DataClassName 'TagRow')
+      id TEXT PK | conversationId TEXT FK conversations | nome TEXT | cor TEXT(hex)
+  class Conversations               (@DataClassName 'ConversationRow')
+      id | titulo | criadoEm | atualizadoEm | protegidoPorSenha(bool,false)
+      senhaHash? | salt? | rascunho(text,'')
+  class Messages                    (@DataClassName 'MessageRow')
+      id | conversationId FK | tagId? FK tags ON DELETE SET NULL | position int
+      tipo intEnum(default 0) | conteudoTexto? | arquivoPath? (RELATIVO)
+      arquivoNomeOriginal? | arquivoNomeExibicao? | arquivoMimeType?
+      arquivoTamanhoBytes? | data DateTime | dataEditadaManualmente bool(false)
+
+[database/app_database.dart]
+  @DriftDatabase(tables: [Conversations, Messages, Tags])
+  class AppDatabase extends _$AppDatabase
+    AppDatabase()
+    int get schemaVersion => 4
+    MigrationStrategy get migration
+        onCreate: createAll
+        onUpgrade: from<3 => DROP blocks/lines/pages + cria 3 tabelas (destrutivo)
+                   from>=3 && <4 => ADD COLUMN tags.conversation_id + clona tags por conversa
+        beforeOpen: PRAGMA foreign_keys = ON
+  LazyDatabase _openConnection()   -> <docs>/arquivo.sqlite
+  OBS: nova coluna/tabela => subir schemaVersion + bloco em onUpgrade + rodar
+       `dart run build_runner build`.
+
+[models/]  (classes imutáveis simples, todas const)
+  Conversation { id, titulo, criadoEm, atualizadoEm, protegidoPorSenha=false, rascunho='' }
+  Message { id, conversationId, tagId?, position, tipo(MessageType), conteudoTexto?,
+            arquivoPath?, arquivoNomeOriginal?, arquivoNomeExibicao?, arquivoMimeType?,
+            arquivoTamanhoBytes?, data, dataEditadaManualmente=false }
+  Tag { id, conversationId, nome, cor }
+  (Conversation NÃO expõe senhaHash/salt.)
+
+--------------------------------------------------------------------------------
+3. REPOSITORIES / STORAGE / SERVICES / PROVIDERS
+--------------------------------------------------------------------------------
+[repositories/conversation_repository.dart]
+class ConversationRepository(AppDatabase db, MediaStorage storage)
+  // Conversa
+  Stream<List<Conversation>> watchAll()                    // ordem atualizadoEm desc
+  Future<Conversation?> getById(String id)
+  Future<Conversation> create({required String titulo})
+  Future<void> updateTitulo(String id, String novoTitulo)  // atualiza atualizadoEm
+  Future<void> delete(String id)   // tx: messages -> tags -> conversa; depois storage.deleteConversationFolder
+  Conversation _toModel(ConversationRow)
+  // Mensagem texto
+  Stream<List<Message>> watchMessages(String conversationId)   // order by position asc
+  Future<void> saveDraft(String conversationId, String draft)  // NÃO mexe em atualizadoEm
+  Future<void> sendDraft(String conversationId)    // 1 envio = 1 Mensagem; data=hoje; limpa rascunho; atualizadoEm=now
+  Future<void> updateMessageContent(String messageId, String newContent)  // NÃO toca em data
+  Future<void> deleteMessage(String messageId)     // apaga registro + arquivo físico
+  Future<void> setMessageDateManually(String messageId, DateTime date)    // data só-dia + flag true
+  Future<int> _nextPosition(String conversationId)
+  Message _messageToModel(MessageRow)
+  // Anexos
+  Future<void> sendAttachment({required conversationId, required MessageType tipo,
+                               required File file, required String nomeOriginal})
+  Future<void> renameAttachment(String messageId, String novoNome)        // só nomeExibicao
+  Future<void> replaceAttachmentFile({required messageId, required File newFile,
+                                      required String nomeOriginal})      // mantém id/posição/tag/data/nomeExibicao
+  // Tag
+  Future<void> setMessageTag(String messageId, String? tagId)   // valida tag existe e é da mesma conversa (StateError)
+  // Ordem
+  Future<int?> reorderMessage(String messageId, int newIndex)   // renumera position 0..N-1; devolve índice anterior ou null
+  NOTA: no arquivo enviado, os métodos de anexo/tag/reorder estão com
+  indentação "dentro" da classe mas deslocada (cosmético; confirmar chaves).
+
+[repositories/tag_repository.dart]
+class DuplicateTagNameException(String nome)
+class TagRepository(AppDatabase db)
+  static String normalizeName(String raw)       // trim + colapsa espaços + UPPERCASE (reusar na busca)
+  Stream<List<Tag>> watchByConversation(String conversationId)   // ordem alfabética
+  Future<Tag> createOrGet({required conversationId, required nome, required cor})  // ArgumentError se vazio
+  Future<void> update(String id, {String? nome, String? cor})    // DuplicateTagNameException / StateError / ArgumentError
+  Future<void> delete(String id)                // tx: zera tagId nas mensagens + apaga tag
+  Future<int> countMessages(String tagId)
+  Tag _toModel(TagRow)
+
+[storage/media_storage.dart]
+class StoredMedia { relativePath, sizeBytes, mimeType? }
+class MediaStorage
+  MediaStorage()                                      // base = getApplicationDocumentsDirectory
+  MediaStorage.withBaseDir(Future<Directory> Function())   // testes
+  Future<StoredMedia> saveFile(File source, String conversationId)   // copia p/ media/<conv>/<uuid>.<ext>
+  Future<File> resolve(String relativePath)
+  Future<bool> exists(String relativePath)
+  Future<void> delete(String relativePath)            // arquivo + thumb
+  Future<void> deleteConversationFolder(String conversationId)
+  Future<File> thumbnailFileFor(String relativePath)  // <docs>/media_thumbs/<nome>.jpg
+  Future<void> deleteThumbnail(String relativePath)
+
+[services/attachment_service.dart]
+class PickedAttachment { File file; String nomeOriginal; MessageType tipo; bool isTemporary }
+class AttachmentPermissionException(String message)
+class AttachmentService
+  Future<PickedAttachment?> takePhoto() | pickImageFromGallery() | recordVideo() | pickVideoFromGallery()
+  Future<PickedAttachment?> pickDocument() | pickAudioFile()
+  Future<PickedAttachment?> _pickWithFilePicker(FileType type, {MessageType? forceType})
+  bool get isRecording
+  Future<void> startRecording()                       // AttachmentPermissionException se sem mic
+  Future<PickedAttachment?> stopRecording()           // m4a temporário (isTemporary=true)
+  Future<void> cancelRecording()
+  Future<void> dispose()
+  Future<PickedAttachment?> pickForReplace(MessageType tipo)
+  // captura perdida (Android mata app durante câmera)
+  Future<void> markPendingCapture(String conversationId)
+  Future<String?> readPendingCapture()
+  Future<void> clearPendingCapture()
+  Future<PickedAttachment?> retrieveLostCapture()     // só Android
+  static MessageType inferType(String path)           // por MIME; default documento
+  String _friendlyName(String prefix, String originalPath)
+  PickedAttachment? _fromXFile(XFile?, MessageType, {String? prefix})
+  Exception _mapPickerError(Object e, String origem)
+
+[providers/conversation_providers.dart]
+  appDatabaseProvider            : Provider<AppDatabase>
+  mediaStorageProvider           : Provider<MediaStorage>
+  conversationRepositoryProvider : Provider<ConversationRepository>
+  attachmentServiceProvider      : Provider<AttachmentService>   (dispose automático)
+  conversationsStreamProvider    : StreamProvider<List<Conversation>>
+  conversationByIdProvider       : FutureProvider.autoDispose.family<Conversation?, String>
+  messagesStreamProvider         : StreamProvider.family<List<Message>, String(conversationId)>
+
+[providers/tag_providers.dart]
+  tagRepositoryProvider          : Provider<TagRepository>
+  tagsStreamProvider             : StreamProvider.family<List<Tag>, String(conversationId)>
+  tagUsageCountsProvider         : StreamProvider<Map<String,int>>   // tagId -> nº mensagens (global)
+
+--------------------------------------------------------------------------------
+4. TELAS
+--------------------------------------------------------------------------------
+[app.dart]      ArquivoApp (MaterialApp; home: LostCaptureGate(child: HomeScreen()))
+[main.dart]     main() -> runApp(ProviderScope(child: ArquivoApp()))
+
+[screens/home_screen.dart]  HomeScreen (ConsumerStatefulWidget) — RF01/RF06/RF06.1
+  _HomeScreenState: _openSearch(), _closeSearch(), _clearQuery(),
+    List<Conversation> _filter(List<Conversation>)  // normalizeText, título
+    Future<void> _createConversation()  // dialog -> repo.create -> push ChatScreen
+    Future<void> _renameConversation(String id, String currentTitle)
+    Future<void> _deleteConversation(String id, String titulo)
+    PreferredSizeWidget _buildAppBar()
+  _ConversationTile(conversation, onRename, onDelete) — subtítulo = atualizadoEm; ícone cadeado se protegida
+  (RF06 pede "prévia da última mensagem" — NÃO implementado.)
+
+[screens/tags_screen.dart]  TagsScreen({conversationId}) — lista/edita/exclui tags
+    Future<void> _delete(BuildContext, WidgetRef, Tag)   // confirma c/ contagem
+
+[screens/chat_screen.dart]  ChatScreen({conversationId})  *** ARQUIVO CENTRAL ***
+  Estado: _controller, _itemScrollController (ScrollablePositionedList, reverse:true),
+    _highlightedId, _probes (Set<_ItemProbeState>), modo mover (_moveActive, _moveId,
+    _move ValueNotifier<_MoveVisual?>, _scrollOffsetController, _autoScrollTimer,
+    _lastPointer, _lastDropIndex), _draftLoaded, _sendingAttachment, _lastMessageCount
+  Rascunho/envio:
+    _loadInitialDraft() | _onDraftChanged(String) [debounce 400ms] | _send()
+  Anexos:
+    _onAttachPressed() | _recordAudio(AttachmentService) | _renameAttachment(Message)
+    _replaceAttachment(Message) | _sendPicked(PickedAttachment) | _showSnack(String)
+  Navegação/scroll:
+    _scrollToBottomOnNextFrame() | _flashHighlight(String id)
+    _goToMessage({index,total,messageId})   // índice cronológico -> índice invertido: total-1-index
+  Reordenar (long-press + mover):
+    _itemRects() | _computeDrop(double globalY, List<Message>) -> _Drop?
+    _updateMove(Offset, List<Message>) | _onMoveUpdate(Message, LongPressMoveUpdateDetails)
+    _onPressEnd(Message) [mover ou abre _showMessageActions] | _onPressCancel()
+    _finishMove() | _resetMove() | _startAutoScroll() | _stopAutoScroll() | _autoScrollTick()
+    _showUndoSnack(String messageId, int originalIndex) | _buildMoveOverlay(messages, tagsById)
+  Menu/busca:
+    _onMenuSelected(String)  ('search' | 'tags')
+    _openSearchMenu()        // só SearchMode.goToDate por enquanto
+    _searchByDate()          // showDatePicker -> firstIndexOnDate -> _goToMessage
+  Ações de mensagem:
+    _editMessage(Message) | _editDate(Message) | _openTagPicker(Message)
+    _openDetails(Message, int position, int total, Tag?) | _deleteMessage(Message)
+    _showMessageActions(Message)   // bottom sheet: editar texto, renomear/substituir arquivo, editar data, definir tag, excluir
+  Gestos por item: Dismissible horizontal (startToEnd => tag picker; endToStart =>
+    detalhes; confirmDismiss sempre false), long-press = mover/menu, tap texto = editar.
+  Classes auxiliares no mesmo arquivo:
+    _TagSwipeBackground, _DetailsSwipeBackground, _Composer(controller,enabled,onChanged,onSend,onAttach),
+    _Drop{index,lineY?}, _MoveVisual{dropIndex,previewTop,lineY?},
+    _ItemProbe/_ItemProbeState (registra rects; keepAlive no item movido),
+    _MovePreview(message, tag)
+
+--------------------------------------------------------------------------------
+5. WIDGETS
+--------------------------------------------------------------------------------
+[widgets/message_bubble.dart]
+  MessageBubble({message, tag?, onTap?, onLongPress?}) ConsumerWidget
+    Stack: TagRibbon (fundo) + balão alinhado à direita (maxFactor 0.70 da largura)
+    _content(context, scheme) por tipo; static _documentIcon(String? name)
+  top-level: Future<void> _openFile(BuildContext, File)  (OpenFilex)
+  _MissingFile | _ImageContent(message) | _VideoContent(message) (+ _VideoData) |
+  _Chip(text) | _FileCard(message, icon)   // áudio e documento
+
+[widgets/tag_ribbon.dart]
+  TagRibbon({date, tag?}); static const height = 30
+  Fita colorida atrás do balão; título da tag + data (formatDate) no canto esquerdo.
+
+[widgets/tag_chip.dart]
+  TagChip({tag, compact=false, maxWidth?}) + _TagArrowClipper (compact sem uso real)
+
+[widgets/tag_picker_sheet.dart]
+  Future<void> showTagPickerSheet(context, {required Message message, VoidCallback? onManageTags})
+  _TagPickerSheet: _assign(context, ref, String? tagId) | _newTag(...) | _content(...)
+  (import de tag_repository.dart possivelmente não usado)
+
+[widgets/tag_editor_dialog.dart]
+  Future<Tag?> showCreateTagDialog(context, WidgetRef, String conversationId)
+  Future<bool> showEditTagDialog(context, WidgetRef, Tag tag)
+  _TagEditorDialog(title, onSave(nome,cor)->Future<String?>, initial?, helper?) | _ColorDot
+
+[widgets/message_details_sheet.dart]
+  Future<void> showMessageDetailsSheet(context, {message, Tag? tag, position, total})
+  _MessageDetailsSheet: _typeLabel(MessageType), _openFile(context, ref) | _InfoRow
+
+[widgets/attachment_picker_sheet.dart]
+  enum AttachmentAction { camera, gallery, video, videoGallery, audioRecord, audioFile, document }
+  Future<AttachmentAction?> showAttachmentPickerSheet(BuildContext)
+
+[widgets/audio_recorder_dialog.dart]
+  Future<bool?> showAudioRecorderDialog(BuildContext)   // true=parar e enviar
+
+[widgets/search_options_sheet.dart]
+  enum SearchMode { goToDate }      // Sprint 4 deve ampliar (texto/filtros)
+  Future<SearchMode?> showSearchOptionsSheet(BuildContext)
+
+[widgets/lost_capture_gate.dart]
+  LostCaptureGate({child}) — no initState chama _recover(): lê pending_capture,
+  retrieveLostData, sendAttachment e abre ChatScreen.
+
+--------------------------------------------------------------------------------
+6. BUSCA (RF05) E UTILS
+--------------------------------------------------------------------------------
+[search/message_filter.dart]
+  class MessageFilter({text='', from?, to?, Set<MessageType> types={}, Set<String> tagIds={}})
+    static const empty; bool hasText, hasDates, isEmpty
+    copyWith({text, from, to, clearDates=false, types, tagIds})
+    Semântica: OU dentro da categoria (types/tagIds), E entre categorias.
+
+[search/message_search.dart]
+  class SearchHit { int index (na lista completa); Message message; List<MatchRange> matches; int get steps }
+  String shownText(Message m)         // texto do balão (conteúdo ou nomeExibicao)
+  List<SearchHit> searchMessages(List<Message>, MessageFilter)  // tipo, tag, datas (inverte from>to), texto (+nome original p/ anexos)
+  int? firstIndexOnDate(List<Message>, DateTime)
+  STATUS: pronta, AINDA NÃO LIGADA à UI (só goToDate usa firstIndexOnDate).
+
+[utils/text_normalize.dart]
+  class MatchRange(start, end)
+  String normalizeText(String)        // lower + sem acento, MESMO tamanho da string
+  List<MatchRange> findMatches(String text, String query)
+
+[utils/format.dart]     String formatBytes(int?) | String formatDate(DateTime) -> dd/MM/yyyy
+[utils/tag_colors.dart] const List<String> kTagPalette (10 hex) | Color tagColorFromHex(String)
+
+[diff/line_diff_engine.dart]  LEGADO. int _levenshtein; double similarityRatio(a,b);
+  class DiffLine; List<DiffLine> computeUpdatedLines({...}). Não importa models do app.
+
+--------------------------------------------------------------------------------
+7. FLUXOS (quem chama quem)
+--------------------------------------------------------------------------------
+Enviar texto:   ChatScreen._onDraftChanged -> repo.saveDraft (debounce)
+                ChatScreen._send -> saveDraft -> sendDraft -> _controller.clear
+Anexar:         _composer.onAttach -> _onAttachPressed -> showAttachmentPickerSheet
+                -> AttachmentService.* -> _sendPicked -> repo.sendAttachment
+                -> storage.saveFile (copia) + insert Messages
+Tag:            swipe direita / "Definir tag" -> _openTagPicker -> showTagPickerSheet
+                -> repo.setMessageTag; criar: showCreateTagDialog -> TagRepository.createOrGet
+Detalhes:       swipe esquerda -> _openDetails -> showMessageDetailsSheet
+Reordenar:      long-press + arrasto >12px -> _onMoveUpdate -> _finishMove -> repo.reorderMessage
+Ir p/ data:     menu "Pesquisar" -> showSearchOptionsSheet -> _searchByDate
+Excluir conversa: HomeScreen._deleteConversation -> repo.delete (+ pasta de mídia)
+Captura perdida: LostCaptureGate._recover (app start) <-> markPendingCapture em _onAttachPressed
+
+--------------------------------------------------------------------------------
+8. INVARIANTES (não quebrar)
+--------------------------------------------------------------------------------
+1. `data` nunca muda por edição de texto, rename/replace de anexo, tag ou reorder;
+   só por setMessageDateManually (flag true) ou excluir+reenviar.
+2. Operações de tag e reorder NÃO alteram atualizadoEm da Conversa.
+3. saveDraft NÃO altera atualizadoEm; sendDraft/sendAttachment alteram.
+4. Ordem da conversa = `position` (não `data`). Lista da UI é reverse:true:
+   índice widget = total-1-índiceCronológico.
+5. 1 envio de texto = 1 Mensagem (várias linhas internas permitidas).
+6. Tag: no máx. 1 por mensagem; tag deve ser da mesma conversa; nome via
+   TagRepository.normalizeName; excluir tag não exclui mensagens.
+7. BD guarda caminho RELATIVO; resolver sempre via MediaStorage.resolve.
+8. Excluir Conversa: mensagens -> tags -> conversa (FKs ligadas) + pasta media/<id>.
+9. Alterou tables.dart => subir schemaVersion, migrar, rodar build_runner.
+
+--------------------------------------------------------------------------------
+9. PENDÊNCIAS E ALERTAS CONHECIDOS
+--------------------------------------------------------------------------------
+BUG provável em chat_screen.dart -> _deleteMessage(): o AlertDialog contém um
+  PopupMenuButton (itens "[teste] Ir ao início/fim" e "Gerenciar tags") nas
+  `actions`, no lugar dos botões Cancelar/Excluir. Parece resíduo de merge da
+  Etapa 4.2; o dialog nunca retorna true e a exclusão não funciona. Corrigir
+  para dois TextButton (Cancelar -> pop(false), Excluir -> pop(true)).
+- Sprint 4 incompleta: busca por texto/tipo/tag/intervalo (searchMessages +
+  MessageFilter prontos) falta UI no chat (ampliar SearchMode, destacar matches,
+  navegar entre ocorrências via SearchHit.steps).
+- Sprint 5 (senha por Conversa, RF08) não iniciada: colunas senhaHash/salt existem,
+  sem lógica; pubspec ainda sem cryptography/flutter_secure_storage.
+- RF06: prévia da última mensagem na Home não implementada (usa só atualizadoEm).
+- Spec: RF04 já cita escopo por Conversa; modelo Tag tem conversa_id.
+- Spec cita theme/app_theme.dart inexistente; diretório real tem services/, search/, utils/.
+- Herdadas Sprint 2: progresso de cópia, varredura de órfãos em media/, player
+  interno, seleção múltipla, remover line_diff_engine.dart.
+- TagChip.compact sem uso; import não usado em tag_picker_sheet.dart.
+- Android: applicationId com.example.simple_notes; release assinado com debug key.
+- tagUsageCountsProvider é global (ids únicos), mas TagsScreen só mostra tags da conversa.
+
+--------------------------------------------------------------------------------
+10. ÍNDICE "PRECISO MEXER EM ..." -> ARQUIVO(S)
+--------------------------------------------------------------------------------
+Novo campo em Mensagem/Conversa/Tag ... tables.dart, app_database.dart (migração),
+                                        models/*.dart, repository (_toModel/_messageToModel), .g.dart (regerar)
+Novo tipo de anexo ...................... tables.dart (MessageType, ao final), attachment_service.dart
+                                        (inferType/pick*), attachment_picker_sheet.dart,
+                                        message_bubble.dart (_content), message_details_sheet.dart (_typeLabel),
+                                        chat_screen.dart (_MovePreview._icon, _onAttachPressed)
+Aparência do balão/mídia ................ message_bubble.dart
+Fita/tag visual ......................... tag_ribbon.dart, tag_chip.dart, tag_colors.dart
+Regras de tag ........................... tag_repository.dart, conversation_repository.setMessageTag
+Gestos (swipe/long-press/mover) ......... chat_screen.dart (itemBuilder + métodos de mover)
+Rascunho/envio .......................... chat_screen._send/_onDraftChanged, repo.saveDraft/sendDraft
+Busca no chat (Sprint 4) ................ search/*.dart, search_options_sheet.dart, chat_screen._openSearchMenu
+Busca de conversa (Home) ................ home_screen._filter, text_normalize.dart
+Arquivos/thumbs em disco ................ media_storage.dart
+Permissões/câmera/áudio ................. attachment_service.dart, AndroidManifest.xml, audio_recorder_dialog.dart
+Recuperação de captura .................. attachment_service (pending*), lost_capture_gate.dart, app.dart
+Tema/locale ............................. app.dart
+Detalhes da mensagem .................... message_details_sheet.dart
+Criptografia/senha (Sprint 5) ........... conversation_repository, tables.dart (já tem colunas), home_screen/chat_screen (gate), pubspec
+================================================================================
+FIM
+================================================================================
