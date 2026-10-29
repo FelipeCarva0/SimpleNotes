@@ -43,3 +43,18 @@ final messagesStreamProvider =
     StreamProvider.family<List<Message>, String>((ref, conversationId) {
   return ref.watch(conversationRepositoryProvider).watchMessages(conversationId);
 });
+
+/// Notifica a UI quando o conjunto de conversas desbloqueadas muda, para que
+/// a Home re-renderize o cadeado e o `messagesStreamProvider` seja reexecutado
+/// (o repositório decifra na hora de entregar; a UI só precisa saber que
+/// mudou).
+final conversationUnlockTickProvider = StreamProvider<int>((ref) {
+  // Um contador simples que a UI pode observar. Quem chama `lock`/`unlock`
+  // no repositório incrementa este estado via `ref.read(...)` — mas para
+  // manter o repositório puro (sem Riverpod), a UI usa `ref.invalidate` ou
+  // `ref.read` + `setState` local (ver Bloco 3).
+  //
+  // Este provider fica como ponto de extensão. Por enquanto devolve 0.
+  return Stream<int>.value(0);
+});
+
