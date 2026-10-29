@@ -9,22 +9,27 @@ import '../providers/conversation_providers.dart';
 import '../utils/format.dart';
 import '../models/tag.dart';
 import 'tag_ribbon.dart';
+import 'highlighted_text.dart';
 
 /// Balão de uma Mensagem (RF01/RF02). Ramifica por tipo (Sprint 2).
 ///
-/// Sprint 3 (RF04): o gesto de arrastar envolve este widget por fora.
+/// Sprint 4 (RF05): recebe [highlight] para destacar ocorrências da busca
+/// por palavra. Sprint 3 (RF04): o gesto de arrastar envolve este widget
+/// por fora — o long-press não é tratado aqui.
 class MessageBubble extends ConsumerWidget {
   final Message message;
   final Tag? tag;
   final VoidCallback? onTap;
-  final VoidCallback? onLongPress;
+
+  /// Destaque da busca por palavra (4.4). `null` = sem busca ativa.
+  final SearchHighlight? highlight;
 
   const MessageBubble({
     super.key,
     required this.message,
     this.tag,
     this.onTap,
-    this.onLongPress,
+    this.highlight,
   });
 
   @override
@@ -33,23 +38,21 @@ class MessageBubble extends ConsumerWidget {
     final isMedia =
         message.tipo == MessageType.imagem || message.tipo == MessageType.video;
 
-    // Relativo à área ao lado da coluna de data. Com tag, o balão cede espaço
-    // à esquerda para o título da fita.
     final maxFactor = 0.70;
 
     return LayoutBuilder(
       builder: (context, constraints) {
         return Stack(
           children: [
-            // RF04 — fita atrás do balão, de ponta a ponta, centrada na vertical.
             Positioned.fill(
-              child: Center(child: TagRibbon(date: message.data, tag: tag)),
+              child: Center(
+                child: TagRibbon(date: message.data, tag: tag),
+              ),
             ),
             Align(
               alignment: Alignment.centerRight,
               child: GestureDetector(
                 onTap: onTap,
-                onLongPress: onLongPress,
                 child: Container(
                   constraints: BoxConstraints(
                     maxWidth: constraints.maxWidth * maxFactor,
@@ -74,15 +77,18 @@ class MessageBubble extends ConsumerWidget {
                       _content(context, scheme),
                       if (message.dataEditadaManualmente)
                         Padding(
-                          padding:
-                              EdgeInsets.only(top: 3, right: isMedia ? 6 : 0),
+                          padding: EdgeInsets.only(
+                            top: 3,
+                            right: isMedia ? 6 : 0,
+                          ),
                           child: Tooltip(
                             message: 'Data editada manualmente',
                             child: Icon(
                               Icons.edit_calendar_outlined,
                               size: 13,
-                              color: scheme.onPrimaryContainer
-                                  .withValues(alpha: 0.7),
+                              color: scheme.onPrimaryContainer.withValues(
+                                alpha: 0.7,
+                              ),
                             ),
                           ),
                         ),
@@ -96,23 +102,31 @@ class MessageBubble extends ConsumerWidget {
       },
     );
   }
+
   Widget _content(BuildContext context, ColorScheme scheme) {
+    final textStyle = TextStyle(color: scheme.onPrimaryContainer);
     switch (message.tipo) {
       case MessageType.texto:
-        return Text(
+        return highlightedText(
           message.conteudoTexto ?? '',
-          style: TextStyle(color: scheme.onPrimaryContainer),
+          textStyle,
+          highlight,
         );
       case MessageType.imagem:
-        return _ImageContent(message: message);
+        return _ImageContent(message: message, highlight: highlight);
       case MessageType.video:
-        return _VideoContent(message: message);
+        return _VideoContent(message: message, highlight: highlight);
       case MessageType.audio:
-        return _FileCard(message: message, icon: Icons.audiotrack_outlined);
+        return _FileCard(
+          message: message,
+          icon: Icons.audiotrack_outlined,
+          highlight: highlight,
+        );
       case MessageType.documento:
         return _FileCard(
           message: message,
           icon: _documentIcon(message.arquivoNomeOriginal),
+          highlight: highlight,
         );
     }
   }
@@ -146,7 +160,9 @@ Future<void> _openFile(BuildContext context, File file) async {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(
-        const SnackBar(content: Text('Nenhum app disponível para abrir este arquivo.')),
+        const SnackBar(
+          content: Text('Nenhum app disponível para abrir este arquivo.'),
+        ),
       );
   }
 }
@@ -181,7 +197,8 @@ class _MissingFile extends StatelessWidget {
 
 class _ImageContent extends ConsumerStatefulWidget {
   final Message message;
-  const _ImageContent({required this.message});
+  final SearchHighlight? highlight;
+  const _ImageContent({required this.message, this.highlight});
 
   @override
   ConsumerState<_ImageContent> createState() => _ImageContentState();
@@ -199,7 +216,6 @@ class _ImageContentState extends ConsumerState<_ImageContent> {
   @override
   void didUpdateWidget(covariant _ImageContent old) {
     super.didUpdateWidget(old);
-    // Arquivo substituído (RF02.4): recarrega.
     if (old.message.arquivoPath != widget.message.arquivoPath) {
       _future = _resolve();
     }
@@ -216,36 +232,60 @@ class _ImageContentState extends ConsumerState<_ImageContent> {
   @override
   Widget build(BuildContext context) {
     const size = 200.0;
-    return FutureBuilder<File?>(
-      future: _future,
-      builder: (context, snap) {
-        if (snap.connectionState != ConnectionState.done) {
-          return const SizedBox(
-            width: size,
-            height: size,
-            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-          );
-        }
-        final file = snap.data;
-        if (file == null) return const _MissingFile();
+    final scheme = Theme.of(context).colorScheme;
+    final caption = widget.message.arquivoNomeExibicao ?? '';
 
-        final dpr = MediaQuery.of(context).devicePixelRatio;
-        return ClipRRect(
-          borderRadius: BorderRadius.circular(10),
-          child: GestureDetector(
-            onTap: () => _openFile(context, file),
-            onLongPress: null,
-            child: Image.file(
-              file,
-              width: size,
-              height: size,
-              fit: BoxFit.cover,
-              cacheWidth: (size * dpr).round(),
-              errorBuilder: (_, _, _) => const _MissingFile(),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        FutureBuilder<File?>(
+          future: _future,
+          builder: (context, snap) {
+            if (snap.connectionState != ConnectionState.done) {
+              return const SizedBox(
+                width: size,
+                height: size,
+                child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+              );
+            }
+            final file = snap.data;
+            if (file == null) return const _MissingFile();
+
+            final dpr = MediaQuery.of(context).devicePixelRatio;
+            return ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: GestureDetector(
+                onTap: () => _openFile(context, file),
+                child: Image.file(
+                  file,
+                  width: size,
+                  height: size,
+                  fit: BoxFit.cover,
+                  cacheWidth: (size * dpr).round(),
+                  errorBuilder: (_, _, _) => const _MissingFile(),
+                ),
+              ),
+            );
+          },
+        ),
+        if (caption.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: highlightedText(
+              caption,
+              TextStyle(
+                color: scheme.onPrimaryContainer,
+                fontSize: 12,
+              ),
+              widget.highlight,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
             ),
           ),
-        );
-      },
+        ],
+      ],
     );
   }
 }
@@ -256,7 +296,8 @@ class _ImageContentState extends ConsumerState<_ImageContent> {
 
 class _VideoContent extends ConsumerStatefulWidget {
   final Message message;
-  const _VideoContent({required this.message});
+  final SearchHighlight? highlight;
+  const _VideoContent({required this.message, this.highlight});
 
   @override
   ConsumerState<_VideoContent> createState() => _VideoContentState();
@@ -307,53 +348,80 @@ class _VideoContentState extends ConsumerState<_VideoContent> {
   @override
   Widget build(BuildContext context) {
     const size = 200.0;
-    return FutureBuilder<_VideoData?>(
-      future: _future,
-      builder: (context, snap) {
-        if (snap.connectionState != ConnectionState.done) {
-          return const SizedBox(
-            width: size,
-            height: size,
-            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-          );
-        }
-        final data = snap.data;
-        if (data == null) return const _MissingFile();
+    final scheme = Theme.of(context).colorScheme;
+    final caption = widget.message.arquivoNomeExibicao ?? '';
 
-        return ClipRRect(
-          borderRadius: BorderRadius.circular(10),
-          child: GestureDetector(
-            onTap: () => _openFile(context, data.video),
-            child: SizedBox(
-              width: size,
-              height: size,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  if (data.thumb != null)
-                    Image.file(
-                      data.thumb!,
-                      fit: BoxFit.cover,
-                      cacheWidth: 440,
-                      errorBuilder: (_, _, _) => const ColoredBox(color: Colors.black26),
-                    )
-                  else
-                    const ColoredBox(color: Colors.black26),
-                  const Center(
-                    child: Icon(Icons.play_circle_fill,
-                        size: 56, color: Colors.white70),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        FutureBuilder<_VideoData?>(
+          future: _future,
+          builder: (context, snap) {
+            if (snap.connectionState != ConnectionState.done) {
+              return const SizedBox(
+                width: size,
+                height: size,
+                child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+              );
+            }
+            final data = snap.data;
+            if (data == null) return const _MissingFile();
+
+            return ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: GestureDetector(
+                onTap: () => _openFile(context, data.video),
+                child: SizedBox(
+                  width: size,
+                  height: size,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      if (data.thumb != null)
+                        Image.file(
+                          data.thumb!,
+                          fit: BoxFit.cover,
+                          cacheWidth: 440,
+                          errorBuilder: (_, _, _) =>
+                              const ColoredBox(color: Colors.black26),
+                        )
+                      else
+                        const ColoredBox(color: Colors.black26),
+                      const Center(
+                        child: Icon(Icons.play_circle_fill,
+                            size: 56, color: Colors.white70),
+                      ),
+                      Positioned(
+                        left: 6,
+                        bottom: 6,
+                        child: _Chip(
+                            text: formatBytes(widget.message.arquivoTamanhoBytes)),
+                      ),
+                    ],
                   ),
-                  Positioned(
-                    left: 6,
-                    bottom: 6,
-                    child: _Chip(text: formatBytes(widget.message.arquivoTamanhoBytes)),
-                  ),
-                ],
+                ),
               ),
+            );
+          },
+        ),
+        if (caption.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: highlightedText(
+              caption,
+              TextStyle(
+                color: scheme.onPrimaryContainer,
+                fontSize: 12,
+              ),
+              widget.highlight,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
             ),
           ),
-        );
-      },
+        ],
+      ],
     );
   }
 }
@@ -376,8 +444,10 @@ class _Chip extends StatelessWidget {
         color: Colors.black54,
         borderRadius: BorderRadius.circular(8),
       ),
-      child: Text(text,
-          style: const TextStyle(color: Colors.white, fontSize: 11)),
+      child: Text(
+        text,
+        style: const TextStyle(color: Colors.white, fontSize: 11),
+      ),
     );
   }
 }
@@ -389,7 +459,12 @@ class _Chip extends StatelessWidget {
 class _FileCard extends ConsumerStatefulWidget {
   final Message message;
   final IconData icon;
-  const _FileCard({required this.message, required this.icon});
+  final SearchHighlight? highlight;
+  const _FileCard({
+    required this.message,
+    required this.icon,
+    this.highlight,
+  });
 
   @override
   ConsumerState<_FileCard> createState() => _FileCardState();
@@ -429,7 +504,8 @@ class _FileCardState extends ConsumerState<_FileCard> {
       future: _future,
       builder: (context, snap) {
         final file = snap.data;
-        final missing = snap.connectionState == ConnectionState.done && file == null;
+        final missing =
+            snap.connectionState == ConnectionState.done && file == null;
         if (missing) return const _MissingFile();
 
         return InkWell(
@@ -444,16 +520,21 @@ class _FileCardState extends ConsumerState<_FileCard> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(
+                    highlightedText(
                       name,
+                      TextStyle(
+                        color: color,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      widget.highlight,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: color, fontWeight: FontWeight.w500),
                     ),
                     if (size.isNotEmpty)
                       Text(size,
                           style: TextStyle(
-                              color: color.withValues(alpha: 0.7), fontSize: 12)),
+                              color: color.withValues(alpha: 0.7),
+                              fontSize: 12)),
                   ],
                 ),
               ),

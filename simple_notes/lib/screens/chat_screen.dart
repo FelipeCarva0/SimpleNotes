@@ -19,6 +19,9 @@ import '../utils/format.dart';
 import '../widgets/search_options_sheet.dart';
 import '../widgets/message_details_sheet.dart';
 import '../utils/tag_colors.dart';
+import '../widgets/highlighted_text.dart';
+import '../search/message_filter.dart';
+import '../models/conversation.dart';
 
 /// Tela de chat de uma Conversa (RF01, RF02, RF03) — Sprint 1: só mensagens
 /// de texto. Anexos de arquivo (RF02.3) entram na Sprint 2 e o gesto de
@@ -51,6 +54,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   Timer? _autoScrollTimer;
   Offset? _lastPointer;
   int? _lastDropIndex;
+
+  // Busca por palavra (4.4)
+  bool _searchActive = false;
+  String _searchQuery = '';
+  List<SearchHit> _hits = const [];
+  int _currentHit = 0; // índice em _hits
+  int _currentOccurrence = 0; // índice em _hits[_currentHit].matches
 
   // Só ficamos true depois de carregar o rascunho já salvo no banco; evita
   // que o dispose() sobrescreva um rascunho existente com string vazia caso
@@ -587,13 +597,20 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   /// RF05 — abre o sheet "Pesquisar" e executa o modo escolhido.
+  /// RF05 — abre o sheet "Pesquisar" e executa o modo escolhido.
   Future<void> _openSearchMenu() async {
-    final mode = await showSearchOptionsSheet(context);
-    if (mode == null || !mounted) return;
+    final request = await showSearchOptionsSheet(context);
+    if (request == null || !mounted) return;
 
-    switch (mode) {
+    switch (request.mode) {
       case SearchMode.goToDate:
         await _searchByDate();
+      case SearchMode.wordInConversation:
+        _startWordSearch(request.query ?? '');
+      case SearchMode.resultsList:
+      case SearchMode.dateRange:
+        // Bloco 2 (4.5/4.6).
+        _showSnack('Em breve.');
     }
   }
 
@@ -642,6 +659,134 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       index: index,
       total: current.length,
       messageId: current[index].id,
+    );
+  }
+
+  // ---------------------------------------------------------------------
+  // Busca por palavra na conversa (4.4)
+  // ---------------------------------------------------------------------
+
+  void _startWordSearch(String query) {
+    final trimmed = query.trim();
+    if (trimmed.isEmpty) return;
+
+    final messages = ref
+        .read(messagesStreamProvider(widget.conversationId))
+        .valueOrNull;
+    if (messages == null || messages.isEmpty) {
+      _showSnack('Esta conversa ainda não tem mensagens.');
+      return;
+    }
+
+    final filter = MessageFilter(text: trimmed);
+    final hits = searchMessages(messages, filter);
+    if (hits.isEmpty) {
+      _showSnack('Nenhuma mensagem com "$trimmed".');
+      return;
+    }
+
+    setState(() {
+      _searchActive = true;
+      _searchQuery = trimmed;
+      _hits = hits;
+      _currentHit = 0;
+      _currentOccurrence = 0;
+    });
+
+    _goToCurrentOccurrence();
+  }
+
+  void _closeWordSearch() {
+    if (!_searchActive) return;
+    setState(() {
+      _searchActive = false;
+      _searchQuery = '';
+      _hits = const [];
+      _currentHit = 0;
+      _currentOccurrence = 0;
+    });
+  }
+
+  /// Quantas ocorrências existem no total (soma de `steps` de cada hit).
+  int get _totalOccurrences {
+    var n = 0;
+    for (final h in _hits) {
+      n += h.steps;
+    }
+    return n;
+  }
+
+  /// Posição plana (1-based) da ocorrência atual dentro do total.
+  int get _currentOccurrenceFlat {
+    var n = 0;
+    for (var i = 0; i < _currentHit && i < _hits.length; i++) {
+      n += _hits[i].steps;
+    }
+    n += _currentOccurrence + 1;
+    return n;
+  }
+
+  void _goToCurrentOccurrence() {
+    if (_hits.isEmpty) return;
+    final hit = _hits[_currentHit];
+    final total =
+        ref
+            .read(messagesStreamProvider(widget.conversationId))
+            .valueOrNull
+            ?.length ??
+        _hits.length;
+    _goToMessage(index: hit.index, total: total, messageId: hit.message.id);
+  }
+
+  void _nextOccurrence() {
+    if (_hits.isEmpty) return;
+    final hit = _hits[_currentHit];
+    if (_currentOccurrence + 1 < hit.steps) {
+      setState(() => _currentOccurrence++);
+    } else if (_currentHit + 1 < _hits.length) {
+      setState(() {
+        _currentHit++;
+        _currentOccurrence = 0;
+      });
+    } else {
+      setState(() {
+        _currentHit = 0;
+        _currentOccurrence = 0;
+      });
+    }
+    _goToCurrentOccurrence();
+  }
+
+  void _previousOccurrence() {
+    if (_hits.isEmpty) return;
+    if (_currentOccurrence > 0) {
+      setState(() => _currentOccurrence--);
+    } else if (_currentHit > 0) {
+      final prev = _hits[_currentHit - 1];
+      setState(() {
+        _currentHit--;
+        _currentOccurrence = prev.steps - 1;
+      });
+    } else {
+      final last = _hits.length - 1;
+      setState(() {
+        _currentHit = last;
+        _currentOccurrence = _hits[last].steps - 1;
+      });
+    }
+    _goToCurrentOccurrence();
+  }
+
+  /// Monta o [SearchHighlight] para uma mensagem. `null` se ela não casou.
+  SearchHighlight? _highlightFor(Message message) {
+    if (!_searchActive || _hits.isEmpty) return null;
+    final hitIdx = _hits.indexWhere((h) => h.message.id == message.id);
+    if (hitIdx < 0) return null;
+    final hit = _hits[hitIdx];
+    return SearchHighlight(
+      matches: hit.matches,
+      currentMatch: hitIdx == _currentHit ? _currentOccurrence : -1,
+      originalNameOnly: hit.matches.isEmpty,
     );
   }
 
@@ -735,28 +880,28 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     );
   }
 
- /// RF02.5 — exclusão explícita, distinta de qualquer edição de conteúdo.
-Future<void> _deleteMessage(Message message) async {
-  final confirm = await showDialog<bool>(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: const Text('Excluir mensagem?'),
-      content: const Text('Essa ação não pode ser desfeita.'),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context, false),
-          child: const Text('Cancelar'),
-        ),
-        TextButton(
-          onPressed: () => Navigator.pop(context, true),
-          child: const Text('Excluir'),
-        ),
-      ],
-    ),
-  );
-  if (confirm != true) return;
-  await ref.read(conversationRepositoryProvider).deleteMessage(message.id);
-}
+  /// RF02.5 — exclusão explícita, distinta de qualquer edição de conteúdo.
+  Future<void> _deleteMessage(Message message) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Excluir mensagem?'),
+        content: const Text('Essa ação não pode ser desfeita.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Excluir'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    await ref.read(conversationRepositoryProvider).deleteMessage(message.id);
+  }
 
   void _showMessageActions(Message message) {
     showModalBottomSheet(
@@ -825,6 +970,61 @@ Future<void> _deleteMessage(Message message) async {
     );
   }
 
+  PreferredSizeWidget _buildNormalAppBar(
+    AsyncValue<Conversation?> conversationAsync,
+  ) {
+    return AppBar(
+      title: conversationAsync.when(
+        data: (c) => Text(c?.titulo ?? ''),
+        loading: () => const Text(''),
+        error: (_, _) => const Text('Erro'),
+      ),
+      actions: [
+        PopupMenuButton<String>(
+          onSelected: _onMenuSelected,
+          itemBuilder: (_) => const [
+            PopupMenuItem(value: 'search', child: Text('Pesquisar')),
+            PopupMenuItem(value: 'tags', child: Text('Gerenciar tags')),
+          ],
+        ),
+      ],
+    );
+  }
+
+  PreferredSizeWidget _buildSearchAppBar() {
+    final total = _totalOccurrences;
+    final current = _currentOccurrenceFlat;
+    return AppBar(
+      leading: IconButton(
+        icon: const Icon(Icons.arrow_back),
+        tooltip: 'Fechar busca',
+        onPressed: _closeWordSearch,
+      ),
+      title: Text('"$_searchQuery"', overflow: TextOverflow.ellipsis),
+      actions: [
+        Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Text(
+              total == 0 ? '0' : '$current de $total',
+              style: Theme.of(context).textTheme.labelLarge,
+            ),
+          ),
+        ),
+        IconButton(
+          icon: const Icon(Icons.keyboard_arrow_up),
+          tooltip: 'Ocorrência anterior',
+          onPressed: total == 0 ? null : _previousOccurrence,
+        ),
+        IconButton(
+          icon: const Icon(Icons.keyboard_arrow_down),
+          tooltip: 'Próxima ocorrência',
+          onPressed: total == 0 ? null : _nextOccurrence,
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final conversationAsync = ref.watch(
@@ -850,131 +1050,127 @@ Future<void> _deleteMessage(Message message) async {
       _lastMessageCount = messages.length;
     });
 
-    return Scaffold(
-      appBar: AppBar(
-        title: conversationAsync.when(
-          data: (c) => Text(c?.titulo ?? ''),
-          loading: () => const Text(''),
-          error: (_, _) => const Text('Erro'),
-        ),
-        actions: [
-          PopupMenuButton<String>(
-            onSelected: _onMenuSelected,
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'search', child: Text('Pesquisar')),
-              PopupMenuItem(value: 'tags', child: Text('Gerenciar tags')),
-            ],
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          Expanded(
-            child: messagesAsync.when(
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => Center(child: Text('Erro: $e')),
-              data: (messages) {
-                if (messages.isEmpty) {
-                  return const Center(
-                    child: Text('Nenhuma mensagem ainda. Escreva algo abaixo.'),
-                  );
-                }
-                return Stack(
-                  key: _listAreaKey,
-                  children: [
-                    ScrollablePositionedList.builder(
-                      itemScrollController: _itemScrollController,
-                      scrollOffsetController: _scrollOffsetController,
-                      reverse: true,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 12,
+    return PopScope(
+      canPop: !_searchActive,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _closeWordSearch();
+      },
+      child: Scaffold(
+        appBar: _searchActive
+            ? _buildSearchAppBar()
+            : _buildNormalAppBar(conversationAsync),
+        body: Column(
+          children: [
+            Expanded(
+              child: messagesAsync.when(
+                loading: () => const Center(child: CircularProgressIndicator()),
+                error: (e, _) => Center(child: Text('Erro: $e')),
+                data: (messages) {
+                  if (messages.isEmpty) {
+                    return const Center(
+                      child: Text(
+                        'Nenhuma mensagem ainda. Escreva algo abaixo.',
                       ),
-                      itemCount: messages.length,
-                      itemBuilder: (context, displayIndex) {
-                        // Lista invertida: converte para o índice cronológico da mensagem.
-                        final index = messages.length - 1 - displayIndex;
-                        final message = messages[index];
-                        final dimmed = _moveActive && message.id == _moveId;
+                    );
+                  }
+                  return Stack(
+                    key: _listAreaKey,
+                    children: [
+                      ScrollablePositionedList.builder(
+                        itemScrollController: _itemScrollController,
+                        scrollOffsetController: _scrollOffsetController,
+                        reverse: true,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 12,
+                        ),
+                        itemCount: messages.length,
+                        itemBuilder: (context, displayIndex) {
+                          // Lista invertida: converte para o índice cronológico da mensagem.
+                          final index = messages.length - 1 - displayIndex;
+                          final message = messages[index];
+                          final dimmed = _moveActive && message.id == _moveId;
 
-                        return _ItemProbe(
-                          index: index,
-                          registry: _probes,
-                          keepAlive: _moveActive && message.id == _moveId,
-                          child: GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onLongPressStart: (_) =>
-                                HapticFeedback.mediumImpact(),
-                            onLongPressMoveUpdate: (d) =>
-                                _onMoveUpdate(message, d),
-                            onLongPressEnd: (_) => _onPressEnd(message),
-                            onLongPressCancel: _onPressCancel,
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 300),
-                              decoration: BoxDecoration(
-                                color: message.id == _highlightedId
-                                    ? Theme.of(context).colorScheme.primary
-                                          .withValues(alpha: 0.18)
-                                    : Colors.transparent,
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Opacity(
-                                opacity: dimmed ? 0.35 : 1.0,
-                                child: Dismissible(
-                                  key: ValueKey(message.id),
-                                  direction: DismissDirection.horizontal,
-                                  dismissThresholds: const {
-                                    DismissDirection.startToEnd: 0.25,
-                                    DismissDirection.endToStart: 0.25,
-                                  },
-                                  background: const _TagSwipeBackground(),
-                                  secondaryBackground:
-                                      const _DetailsSwipeBackground(),
-                                  confirmDismiss: (direction) async {
-                                    HapticFeedback.lightImpact();
-                                    // Sem await: a linha volta ao lugar na hora.
-                                    if (direction ==
-                                        DismissDirection.startToEnd) {
-                                      _openTagPicker(message);
-                                    } else {
-                                      _openDetails(
-                                        message,
-                                        index + 1,
-                                        messages.length,
-                                        tagsById[message.tagId],
-                                      );
-                                    }
-                                    return false;
-                                  },
-                                  child: MessageBubble(
-                                    message: message,
-                                    tag: tagsById[message.tagId],
-                                    onTap: message.tipo == MessageType.texto
-                                        ? () => _editMessage(message)
-                                        : null,
+                          return _ItemProbe(
+                            index: index,
+                            registry: _probes,
+                            keepAlive: _moveActive && message.id == _moveId,
+                            child: GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onLongPressStart: (_) =>
+                                  HapticFeedback.mediumImpact(),
+                              onLongPressMoveUpdate: (d) =>
+                                  _onMoveUpdate(message, d),
+                              onLongPressEnd: (_) => _onPressEnd(message),
+                              onLongPressCancel: _onPressCancel,
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 300),
+                                decoration: BoxDecoration(
+                                  color: message.id == _highlightedId
+                                      ? Theme.of(context).colorScheme.primary
+                                            .withValues(alpha: 0.18)
+                                      : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Opacity(
+                                  opacity: dimmed ? 0.35 : 1.0,
+                                  child: Dismissible(
+                                    key: ValueKey(message.id),
+                                    direction: DismissDirection.horizontal,
+                                    dismissThresholds: const {
+                                      DismissDirection.startToEnd: 0.25,
+                                      DismissDirection.endToStart: 0.25,
+                                    },
+                                    background: const _TagSwipeBackground(),
+                                    secondaryBackground:
+                                        const _DetailsSwipeBackground(),
+                                    confirmDismiss: (direction) async {
+                                      HapticFeedback.lightImpact();
+                                      // Sem await: a linha volta ao lugar na hora.
+                                      if (direction ==
+                                          DismissDirection.startToEnd) {
+                                        _openTagPicker(message);
+                                      } else {
+                                        _openDetails(
+                                          message,
+                                          index + 1,
+                                          messages.length,
+                                          tagsById[message.tagId],
+                                        );
+                                      }
+                                      return false;
+                                    },
+                                    child: MessageBubble(
+                                      message: message,
+                                      tag: tagsById[message.tagId],
+                                      highlight: _highlightFor(message),
+                                      onTap: message.tipo == MessageType.texto
+                                          ? () => _editMessage(message)
+                                          : null,
+                                    ),
                                   ),
                                 ),
                               ),
                             ),
-                          ),
-                        );
-                      },
-                    ),
-                    _buildMoveOverlay(messages, tagsById),
-                  ],
-                );
-              },
+                          );
+                        },
+                      ),
+                      _buildMoveOverlay(messages, tagsById),
+                    ],
+                  );
+                },
+              ),
             ),
-          ),
-          if (_sendingAttachment) const LinearProgressIndicator(),
-          _Composer(
-            controller: _controller,
-            enabled: _draftLoaded,
-            onChanged: _onDraftChanged,
-            onSend: _send,
-            onAttach: _sendingAttachment ? null : _onAttachPressed,
-          ),
-        ],
+            if (_sendingAttachment) const LinearProgressIndicator(),
+            _Composer(
+              controller: _controller,
+              enabled: _draftLoaded,
+              onChanged: _onDraftChanged,
+              onSend: _send,
+              onAttach: _sendingAttachment ? null : _onAttachPressed,
+            ),
+          ],
+        ),
       ),
     );
   }
