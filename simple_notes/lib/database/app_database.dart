@@ -22,21 +22,7 @@ class AppDatabase extends _$AppDatabase {
         },
         onUpgrade: (m, from, to) async {
           if (from < 3) {
-            // v2 -> v3: pivot de "Bloco de Notas" para "Arquivo" (spec 5.1).
-            //
-            // A entidade Bloco já tinha sido removida do escopo funcional na
-            // v4.0 da especificação, mas o schema físico (`blocks` e
-            // `pages.block_id`) nunca chegou a ser limpo — essa migração
-            // fecha essa dívida técnica junto com o pivot.
-            //
-            // Decisão: como o app ainda não foi publicado (sem usuários
-            // reais dependendo de Páginas/Linhas em produção), tratamos esta
-            // troca de schema como destrutiva por simplicidade, em vez de
-            // escrever uma migração coluna a coluna. Se este código for
-            // aplicado depois de o app já ter dados reais em campo,
-            // substituir o bloco abaixo por uma migração que preserva
-            // conteúdo (renomear tabelas/colunas existentes e popular os
-            // novos campos via UPDATE) em vez de derrubar as tabelas.
+            
             await m.database.customStatement('DROP TABLE IF EXISTS blocks');
             await m.database.customStatement('DROP TABLE IF EXISTS lines');
             await m.database.customStatement('DROP TABLE IF EXISTS pages');

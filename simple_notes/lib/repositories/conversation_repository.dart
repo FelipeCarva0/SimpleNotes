@@ -171,12 +171,11 @@ class ConversationRepository {
 
     return query.watch().asyncMap((rows) async {
       final isProtected = await _isProtected(conversationId);
-      final ordered = rows.reversed.toList();
       if (!isProtected) {
-        return ordered.map(_messageToModel).toList();
+        return rows.map(_messageToModel).toList();
       }
       final key = _unlockedKeys[conversationId];
-      return _decryptRows(ordered, true, key);
+      return _decryptRows(rows, true, key);
     });
   }
 
@@ -231,6 +230,16 @@ class ConversationRepository {
               ..where(db.messages.conversationId.equals(conversationId)))
             .getSingle();
     return row.read(count) ?? 0;
+  }
+
+  /// Contagem de mensagens da conversa, ao vivo. Reage a qualquer
+  /// inserção ou exclusão, venha de onde vier.
+  Stream<int> watchMessageCount(String conversationId) {
+    final count = db.messages.id.count();
+    final query = db.selectOnly(db.messages)
+      ..addColumns([count])
+      ..where(db.messages.conversationId.equals(conversationId));
+    return query.watchSingle().map((row) => row.read(count) ?? 0);
   }
 
   /// Consulta `protegidoPorSenha` da conversa. Barato (índice implícito em

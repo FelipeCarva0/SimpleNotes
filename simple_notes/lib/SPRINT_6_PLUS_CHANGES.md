@@ -200,3 +200,52 @@ re-bloqueio em background ativo.
   ≤ 5 ms por edição.
 - **Stack técnica**: atualizar a menção a "PBKDF2/Argon2" para "PBKDF2-HMAC-SHA256
   com 155.000 iterações" (decisão F).
+
+  #Correções de bugs:
+  fix(chat): corrige bugs de exibição introduzidos pela paginação da Sprint 6
+
+A paginação acumulava páginas lidas uma única vez, em vez de espelhar o
+banco. Isso causava edições, tags, datas e exclusões não refletidas, além
+de vários problemas de navegação, busca e reordenação.
+
+Paginação (chat_screen.dart)
+- Substitui o acúmulo de páginas por UM stream de janela
+  (watchMessagesPaginated com limit crescente, offset 0). Cada emissão
+  substitui _ordered. Edição, tag, data, reordenação e exclusão passam a
+  aparecer em qualquer mensagem carregada.
+- _loadMore amplia a janela em +100; remove _preloadNext e o setState
+  duplicado em _onPage (o auto-scroll em mensagem nova volta a funcionar).
+- _paginationReady só fica true após a 1ª emissão (some o flash de
+  "Nenhuma mensagem ainda").
+- _onPositionsChanged usa o maior índice visível (mensagem mais antiga na
+  tela), então a pré-carga dispara antes do fim da lista.
+- _goToMessage amplia a janela, espera a emissão e o frame antes de rolar.
+  Sem laço sem garantia de progresso.
+- _totalCount passa a vir de watchMessageCount (stream), cobrindo mudanças
+  externas (exclusão em lote, captura recuperada).
+- Folha de detalhes mostra a posição real na conversa, não na janela.
+
+Busca
+- _loadAllMessages aguarda messagesStreamProvider.future. Elimina o falso
+  "Esta conversa ainda não tem mensagens" em Faixa de datas, Ir para data,
+  Palavra e Lista de resultados.
+- SearchResultsScreen não calcula nem cacheia hits sem dados; _computing
+  inicia true.
+
+Repositório (conversation_repository.dart)
+- watchMessages deixa de inverter a lista (rows.reversed removido): agora
+  devolve ordem cronológica, como documentado. Corrige "Ir para data" (cai
+  na 1ª mensagem do dia), o sentido de ▲/▼ e a ordem dos resultados.
+- Novo watchMessageCount(conversationId).
+
+Reordenar
+- Modo mover usa _ordered (mesma referência das sondas) e converte o
+  índice da janela para o índice global em _finishMove.
+
+Segurança (RF08)
+- ChatScreen observa o ciclo de vida: em paused/detached de conversa
+  protegida descarta o conteúdo decifrado, invalida o provider e, ao
+  voltar, fecha até a Home (que pede a senha).
+- _send trata StateError sem perder o texto digitado.
+
+Sem mudança de schema (continua v4).

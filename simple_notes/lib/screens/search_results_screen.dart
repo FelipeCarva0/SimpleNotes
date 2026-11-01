@@ -11,7 +11,6 @@ import '../widgets/highlighted_text.dart';
 import '../widgets/tag_chip.dart';
 import '../widgets/tag_picker_many_sheet.dart';
 import '../widgets/search_options_sheet.dart';
-import '../models/message.dart';
 
 /// RF05/4.5/4.6 — lista de resultados de busca dentro de uma Conversa.
 ///
@@ -45,7 +44,7 @@ class _SearchResultsScreenState extends ConsumerState<SearchResultsScreen> {
   bool _selecting = false;
   final Set<String> _selectedIds = {};
   List<SearchHit>? _hits;
-  bool _computing = false;
+  bool _computing = true;
   final Map<MessageFilter, List<SearchHit>> _hitsCache = {};
   bool get _rangeMode => _filter.from != null || _filter.to != null;
 
@@ -146,32 +145,35 @@ class _SearchResultsScreenState extends ConsumerState<SearchResultsScreen> {
   }
 
   Future<void> _recomputeHits() async {
-    if (_hitsCache.containsKey(_filter)) {
-      setState(() {
-        _hits = _hitsCache[_filter];
-        _computing = false;
-      });
-      return;
-    }
+  final messages =
+      ref.read(messagesStreamProvider(widget.conversationId)).valueOrNull;
 
-    setState(() => _computing = true);
+  // Dados ainda não chegaram: não calcula, não guarda nada no cache.
+  // O spinner continua e o `ref.listen` do build recalcula quando chegarem.
+  if (messages == null) {
+    if (mounted) setState(() => _computing = true);
+    return;
+  }
 
-    final messages =
-        ref.read(messagesStreamProvider(widget.conversationId)).valueOrNull ??
-        const <Message>[];
-
-    // `searchMessages` é O(n) síncrono. Roda em ~5 ms em 10k com cache quente
-    // (6.8). Em conversa protegida com cache frio, a lista já vem decifrada
-    // pelo `watchAllMessages` antes de chegar aqui.
-    final hits = searchMessages(messages, _filter);
-
-    if (!mounted) return;
-    _hitsCache[_filter] = hits;
+  final cached = _hitsCache[_filter];
+  if (cached != null) {
     setState(() {
-      _hits = hits;
+      _hits = cached;
       _computing = false;
     });
+    return;
   }
+
+  // `searchMessages` é O(n) síncrono (~5 ms em 10k com cache quente).
+  final hits = searchMessages(messages, _filter);
+
+  if (!mounted) return;
+  _hitsCache[_filter] = hits;
+  setState(() {
+    _hits = hits;
+    _computing = false;
+  });
+}
 
   Future<void> _deleteMany() async {
     if (_selectedIds.isEmpty) return;

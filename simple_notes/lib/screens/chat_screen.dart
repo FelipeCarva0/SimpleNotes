@@ -37,7 +37,8 @@ class ChatScreen extends ConsumerStatefulWidget {
   ConsumerState<ChatScreen> createState() => _ChatScreenState();
 }
 
-class _ChatScreenState extends ConsumerState<ChatScreen> {
+class _ChatScreenState extends ConsumerState<ChatScreen>
+    with WidgetsBindingObserver {
   final _controller = TextEditingController();
   final _itemScrollController = ItemScrollController();
   String? _highlightedId;
@@ -73,19 +74,50 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   // ---------------------------------------------------------------------
   static const int _pageSize = 100;
   final List<Message> _ordered = []; // ordem crescente (mais antigas primeiro)
-  final Set<String> _ids = {}; // deduplicação
+  final Set<String> _ids = {};
+  int _limit = _pageSize; // janela atual: as _limit mais recentes
   int _totalCount = 0;
-  bool _preloading = false;
+  bool _preloading = false; // true enquanto uma janela maior carrega
   bool _disposed = false;
   bool _paginationReady = false;
+  Completer<void>? _pageSignal; // completa na próxima emissão do stream
   StreamSubscription<List<Message>>? _pageSub;
+  StreamSubscription<int>? _countSub;
+  bool _protected = false; // conversa tem senha (não muda com a tela aberta)
+  bool _locked = false; // app foi para segundo plano: conteúdo descartado
   final _positionsListener = ItemPositionsListener.create();
-
+  @override
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadInitialDraft();
     _initPagination();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!_protected) return;
+
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      // Descarta tudo que está decifrado em memória.
+      _pageSub?.cancel();
+      _countSub?.cancel();
+      ref.invalidate(messagesStreamProvider(widget.conversationId));
+      if (!mounted) return;
+      setState(() {
+        _locked = true;
+        _ordered.clear();
+        _ids.clear();
+        _hits = const [];
+        _searchActive = false;
+        _searchQuery = '';
+      });
+    } else if (state == AppLifecycleState.resumed && _locked) {
+      // Volta até a Home, que pede a senha de novo.
+      Navigator.of(context).popUntil((route) => route.isFirst);
+    }
   }
 
   Future<void> _loadInitialDraft() async {
@@ -95,6 +127,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     if (!mounted) return;
     setState(() {
       _controller.text = conversation?.rascunho ?? '';
+      _protected = conversation?.protegidoPorSenha ?? false;
       _draftLoaded = true;
     });
   }
@@ -104,78 +137,73 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   // ---------------------------------------------------------------------
 
   Future<void> _initPagination() async {
-    final repo = ref.read(conversationRepositoryProvider);
-
-    _totalCount = await repo.countMessages(widget.conversationId);
     if (!mounted || _disposed) return;
-
-    // Primeira página (mais recentes).
-    _pageSub?.cancel();
-    _pageSub = repo
-        .watchMessagesPaginated(
-          widget.conversationId,
-          limit: _pageSize,
-          offset: 0,
-        )
-        .listen(_onPage);
-
-    setState(() => _paginationReady = true);
-
-    // 1 página em background (primeira rolagem instantânea).
-    _preloadNext();
-
-    // Scroll-based a partir da 2ª página.
+    _countSub?.cancel();
+    _countSub = ref
+        .read(conversationRepositoryProvider)
+        .watchMessageCount(widget.conversationId)
+        .listen((n) {
+          if (_disposed || !mounted) return;
+          _totalCount = n; // sem setState: só alimenta as travas da paginação
+        });
+    _subscribe();
     _positionsListener.itemPositions.addListener(_onPositionsChanged);
   }
 
-  void _onPage(List<Message> page) {
-    if (_disposed || !mounted) return;
-    setState(() {
-      for (final m in page) {
-        if (_ids.add(m.id)) _ordered.add(m);
-      }
-      _ordered.sort((a, b) => a.position.compareTo(b.position));
-    });
-    final before = _ordered.length;
-    setState(() {
-      for (final m in page) {
-        if (_ids.add(m.id)) _ordered.add(m);
-      }
-      _ordered.sort((a, b) => a.position.compareTo(b.position));
-    });
-    if (_ordered.length > before) _scrollToBottomOnNextFrame();
+  /// (Re)assina a janela das [_limit] mensagens mais recentes. O stream do
+  /// drift continua observando o banco, então toda mudança nessa janela
+  /// chega em [_onPage].
+  void _subscribe() {
+    _pageSub?.cancel();
+    _pageSub = ref
+        .read(conversationRepositoryProvider)
+        .watchMessagesPaginated(widget.conversationId, limit: _limit, offset: 0)
+        .listen(
+          _onPage,
+          onError: (Object e) {
+            debugPrint('Erro no stream de mensagens: $e');
+            _preloading = false;
+            _pageSignal?.complete();
+            _pageSignal = null;
+          },
+        );
   }
 
-  Future<void> _preloadNext() async {
-    if (_preloading || _loadedCount >= _totalCount) return;
-    _preloading = true;
-    try {
-      final repo = ref.read(conversationRepositoryProvider);
-      final page = await repo
-          .watchMessagesPaginated(
-            widget.conversationId,
-            limit: _pageSize,
-            offset: _loadedCount,
-          )
-          .first;
-      if (_disposed || !mounted) return;
-      setState(() {
-        for (final m in page) {
-          if (_ids.add(m.id)) _ordered.add(m);
-        }
-        _ordered.sort((a, b) => a.position.compareTo(b.position));
-      });
-      final before = _ordered.length;
-      setState(() {
-        for (final m in page) {
-          if (_ids.add(m.id)) _ordered.add(m);
-        }
-        _ordered.sort((a, b) => a.position.compareTo(b.position));
-      });
-      if (_ordered.length > before) _scrollToBottomOnNextFrame();
-    } finally {
+  /// Cada emissão é a verdade atual da janela: substitui a lista inteira.
+  void _onPage(List<Message> page) {
+    if (_disposed || !mounted || _locked) return;
+
+    final sorted = [...page]..sort((a, b) => a.position.compareTo(b.position));
+
+    // Mensagem realmente nova no fim (envio/anexo) => rola para o fim.
+    final newestId = sorted.isEmpty ? null : sorted.last.id;
+    final hasNewAtEnd =
+        _paginationReady && newestId != null && !_ids.contains(newestId);
+
+    setState(() {
+      _ordered
+        ..clear()
+        ..addAll(sorted);
+      _ids
+        ..clear()
+        ..addAll(sorted.map((m) => m.id));
       _preloading = false;
-    }
+      _paginationReady =
+          true; // só depois da 1ª emissão (evita o "vazio" falso)
+    });
+
+    _pageSignal?.complete();
+    _pageSignal = null;
+
+    if (hasNewAtEnd) _scrollToBottomOnNextFrame();
+  }
+
+  /// Amplia a janela em mais uma página.
+  void _loadMore() {
+    if (_preloading || _limit >= _totalCount) return;
+    _preloading = true;
+    _limit += _pageSize;
+    _subscribe();
   }
 
   int get _loadedCount => _ordered.length;
@@ -183,13 +211,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   void _onPositionsChanged() {
     final positions = _positionsListener.itemPositions.value;
     if (positions.isEmpty) return;
-    final minVisible = positions
+
+    // Lista invertida: índice 0 = mais nova; o MAIOR índice visível é a
+    // mensagem mais antiga na tela. Quando ela chega perto do fim da janela
+    // carregada, amplia a janela em mais uma página.
+    final maxVisible = positions
         .map((p) => p.index)
-        .reduce((a, b) => a < b ? a : b);
-    // `minVisible` é o índice no widget (0 = mais recente). Quando o usuário
-    // se aproxima do fim da janela carregada (mais antigas), preload.
-    if (minVisible >= _loadedCount - 10) {
-      _preloadNext();
+        .reduce((a, b) => a > b ? a : b);
+
+    if (maxVisible >= _loadedCount - 20) {
+      _loadMore();
     }
   }
 
@@ -205,24 +236,20 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   /// RF02.2 — confirmação de envio (botão de enviar).
   Future<void> _send() async {
-    if (_controller.text.trim().isEmpty) return;
+  if (_controller.text.trim().isEmpty) return;
 
-    // Cancela o debounce pendente e garante que o texto mais recente esteja
-    // salvo como rascunho antes de confirmar o envio, para não correr risco
-    // de enviar uma versão um pouco desatualizada do que foi digitado.
-    _debounce?.cancel();
-    await ref
-        .read(conversationRepositoryProvider)
-        .saveDraft(widget.conversationId, _controller.text);
-    await ref
-        .read(conversationRepositoryProvider)
-        .sendDraft(widget.conversationId);
-    _totalCount = await ref
-        .read(conversationRepositoryProvider)
-        .countMessages(widget.conversationId);
-    _controller.clear();
-    _scrollToBottomOnNextFrame();
+  _debounce?.cancel();
+  try {
+    final repo = ref.read(conversationRepositoryProvider);
+    await repo.saveDraft(widget.conversationId, _controller.text);
+    await repo.sendDraft(widget.conversationId);
+  } on StateError catch (e) {
+    _showSnack(e.message);
+    return; // mantém o texto no campo
   }
+  _controller.clear();
+  _scrollToBottomOnNextFrame();
+}
 
   /// RF02.3 — abre o sheet, executa a ação escolhida e envia o anexo.
   Future<void> _onAttachPressed() async {
@@ -372,6 +399,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       ..showSnackBar(SnackBar(content: Text(text)));
   }
 
+  /// Todas as mensagens da conversa, esperando o carregamento terminar.
+  /// Usado só pelas buscas (que precisam da conversa inteira, fora da janela
+  /// paginada). Nunca devolve "vazio por ainda estar carregando".
+  Future<List<Message>> _loadAllMessages() {
+    return ref.read(messagesStreamProvider(widget.conversationId).future);
+  }
+
   void _scrollToBottomOnNextFrame() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_itemScrollController.isAttached) return;
@@ -400,26 +434,29 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     required int total,
     required String messageId,
   }) async {
-    // Atualiza o total real antes de paginar.
-    _totalCount = await ref
-        .read(conversationRepositoryProvider)
-        .countMessages(widget.conversationId);
     if (_disposed || !mounted) return;
 
-    while (!_ids.contains(messageId) && _loadedCount < _totalCount) {
-      await _preloadNext();
+    // Alvo fora da janela: amplia a janela até cobrir a conversa e espera
+    // a emissão + o frame em que a lista é reconstruída.
+    if (!_ids.contains(messageId)) {
+      final signal = Completer<void>();
+      _pageSignal = signal;
+      _limit = _totalCount;
+      _preloading = true;
+      _subscribe();
+      await signal.future.timeout(
+        const Duration(seconds: 10),
+        onTimeout: () {},
+      );
+      if (_disposed || !mounted) return;
+      await WidgetsBinding.instance.endOfFrame;
+      if (_disposed || !mounted) return;
     }
-    // Carrega páginas até a mensagem estar em memória.
-    while (!_ids.contains(messageId) && _loadedCount < _totalCount) {
-      await _preloadNext();
-    }
-    if (_disposed || !mounted) return;
-    if (!_ids.contains(messageId)) return;
 
     final idx = _ordered.indexWhere((m) => m.id == messageId);
     if (idx < 0) return;
-
     if (!_itemScrollController.isAttached) return;
+
     _itemScrollController.scrollTo(
       index: _ordered.length - 1 - idx,
       alignment: 0.4,
@@ -523,11 +560,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       HapticFeedback.selectionClick();
       _startAutoScroll();
     }
-    final messages = ref
-        .read(messagesStreamProvider(widget.conversationId))
-        .valueOrNull;
-    if (messages == null) return;
-    _updateMove(d.globalPosition, messages);
+    if (_ordered.isEmpty) return;
+    _updateMove(d.globalPosition, _ordered);
   }
 
   /// Soltou o dedo: se estava movendo, grava; senão, abre o menu de ações.
@@ -545,9 +579,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   Future<void> _finishMove() async {
     final id = _moveId;
-    final target = _move.value?.dropIndex;
+    final windowTarget = _move.value?.dropIndex;
     try {
-      if (id != null && target != null) {
+      if (id != null && windowTarget != null) {
+        // Índice da janela -> índice global da conversa.
+        final total = _totalCount < _ordered.length
+            ? _ordered.length
+            : _totalCount;
+        final hiddenOlder = total - _ordered.length;
+        final target = windowTarget + hiddenOlder;
+
         final from = await ref
             .read(conversationRepositoryProvider)
             .reorderMessage(id, target);
@@ -602,12 +643,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final area = _listAreaKey.currentContext?.findRenderObject();
     if (pointer == null || area is! RenderBox || !area.hasSize) return;
 
-    final messages = ref
-        .read(messagesStreamProvider(widget.conversationId))
-        .valueOrNull;
-    if (messages == null) return;
+    if (_ordered.isEmpty) return;
 
-    _updateMove(pointer, messages);
+    _updateMove(pointer, _ordered);
 
     const zone = 72.0;
     const maxStep = 22.0;
@@ -734,7 +772,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       case SearchMode.goToDate:
         await _searchByDate();
       case SearchMode.wordInConversation:
-        _startWordSearch(request.query ?? '');
+        await _startWordSearch(request.query ?? '');
       case SearchMode.resultsList:
         await _openResultsList(MessageFilter(text: request.query ?? ''));
       case SearchMode.dateRange:
@@ -744,10 +782,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 
   /// RF05 — data simples: vai para a primeira mensagem do dia escolhido.
   Future<void> _searchByDate() async {
-    final messages = ref
-        .read(messagesStreamProvider(widget.conversationId))
-        .valueOrNull;
-    if (messages == null || messages.isEmpty) {
+    final messages = await _loadAllMessages();
+    if (!mounted) return;
+    if (messages.isEmpty) {
       _showSnack('Esta conversa ainda não tem mensagens.');
       return;
     }
@@ -794,14 +831,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   // Busca por palavra na conversa (4.4)
   // ---------------------------------------------------------------------
 
-  void _startWordSearch(String query) {
+  Future<void> _startWordSearch(String query) async {
     final trimmed = query.trim();
     if (trimmed.isEmpty) return;
 
-    final messages = ref
-        .read(messagesStreamProvider(widget.conversationId))
-        .valueOrNull;
-    if (messages == null || messages.isEmpty) {
+    final messages = await _loadAllMessages();
+    if (!mounted) return;
+    if (messages.isEmpty) {
       _showSnack('Esta conversa ainda não tem mensagens.');
       return;
     }
@@ -922,10 +958,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   // ---------------------------------------------------------------------
 
   Future<void> _openResultsList(MessageFilter filter) async {
-    final messages = ref
-        .read(messagesStreamProvider(widget.conversationId))
-        .valueOrNull;
-    if (messages == null || messages.isEmpty) {
+    final messages = await _loadAllMessages();
+    if (!mounted) return;
+    if (messages.isEmpty) {
       _showSnack('Esta conversa ainda não tem mensagens.');
       return;
     }
@@ -964,10 +999,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   }
 
   Future<void> _openDateRangeResults() async {
-    final messages = ref
-        .read(messagesStreamProvider(widget.conversationId))
-        .valueOrNull;
-    if (messages == null || messages.isEmpty) {
+    final messages = await _loadAllMessages();
+    if (!mounted) return;
+    if (messages.isEmpty) {
       _showSnack('Esta conversa ainda não tem mensagens.');
       return;
     }
@@ -1024,10 +1058,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
           .read(conversationRepositoryProvider)
           .saveDraft(widget.conversationId, _controller.text);
     }
+    WidgetsBinding.instance.removeObserver(this);
     _controller.dispose();
     _highlightTimer?.cancel();
     _autoScrollTimer?.cancel();
     _disposed = true;
+    _countSub?.cancel();
     _pageSub?.cancel();
     _positionsListener.itemPositions.removeListener(_onPositionsChanged);
     super.dispose();
@@ -1096,8 +1132,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     );
   }
 
-  void _openDetails(Message message, int position, int total, Tag? tag) {
+  void _openDetails(Message message, int windowIndex, Tag? tag) {
     if (!mounted) return;
+
+    // Total real; nunca menor que o que já está carregado (o contador
+    // pode chegar um instante depois da página).
+    final total = _totalCount < _ordered.length ? _ordered.length : _totalCount;
+    final hiddenOlder = total - _ordered.length; // mensagens fora da janela
+    final position = hiddenOlder + windowIndex + 1;
+
     showMessageDetailsSheet(
       context,
       message: message,
@@ -1128,9 +1171,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     );
     if (confirm != true) return;
     await ref.read(conversationRepositoryProvider).deleteMessage(message.id);
-    _totalCount = await ref
-    .read(conversationRepositoryProvider)
-    .countMessages(widget.conversationId);
   }
 
   void _showMessageActions(Message message) {
@@ -1192,7 +1232,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               onTap: () {
                 Navigator.pop(context);
                 _deleteMessage(message);
-                
               },
             ),
           ],
@@ -1348,8 +1387,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
                                         } else {
                                           _openDetails(
                                             message,
-                                            index + 1,
-                                            _ordered.length,
+                                            index,
                                             tagsById[message.tagId],
                                           );
                                         }

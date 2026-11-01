@@ -1,12 +1,9 @@
 import 'package:drift/drift.dart';
 
-/// Tipo de conteúdo de uma Mensagem (RF02). A ordem dos valores define o
-/// inteiro persistido pelo `intEnum` do drift — não reordenar depois que
-/// houver dados reais gravados, apenas adicionar novos valores ao final.
+
 enum MessageType { texto, imagem, video, audio, documento }
 
-/// RF04 — Tag (etiqueta colorida). Cada Mensagem referencia no máximo uma
-/// Tag (ver `Messages.tagId`); não há tabela associativa N:N.
+
 @DataClassName('TagRow')
 class Tags extends Table {
   TextColumn get id => text()();
@@ -18,9 +15,7 @@ class Tags extends Table {
   Set<Column> get primaryKey => {id};
 }
 
-/// RF01 — Conversa (antiga Página). Sem `blockId`: a entidade Bloco foi
-/// removida do escopo na v4.0 e esta migração elimina o resíduo que ainda
-/// existia no schema.
+
 @DataClassName('ConversationRow')
 class Conversations extends Table {
   TextColumn get id => text()();
