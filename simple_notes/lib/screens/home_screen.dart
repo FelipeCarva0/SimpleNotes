@@ -21,6 +21,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   final _searchController = TextEditingController();
   bool _searching = false;
   String _query = '';
+  
 
   @override
   void dispose() {
@@ -76,8 +77,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     if (titulo == null || titulo.isEmpty || !mounted) return;
 
-    final conversation =
-        await ref.read(conversationRepositoryProvider).create(titulo: titulo);
+    final conversation = await ref
+        .read(conversationRepositoryProvider)
+        .create(titulo: titulo);
     if (!mounted) return;
 
     Navigator.push(
@@ -141,7 +143,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     await ref.read(conversationRepositoryProvider).delete(id);
   }
 
-    // ---------------------------------------------------------------------
+  // ---------------------------------------------------------------------
   // RF08 — proteção por senha (Sprint 5)
   // ---------------------------------------------------------------------
 
@@ -161,6 +163,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         conversation.id,
         password,
       );
+
       if (!mounted) return;
 
       if (key == null) {
@@ -190,6 +193,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (password == null || !mounted) return;
 
     final repo = ref.read(conversationRepositoryProvider);
+
     try {
       await repo.protectConversation(conversation.id, password);
       if (!mounted) return;
@@ -198,6 +202,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     } catch (e) {
       debugPrint('Erro ao proteger conversa: $e');
       _showSnack('Não foi possível proteger a conversa.');
+    } finally {
+
     }
   }
 
@@ -209,6 +215,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (change == null || !mounted) return;
 
     final repo = ref.read(conversationRepositoryProvider);
+
     try {
       await repo.changeConversationPassword(
         conversation.id,
@@ -223,6 +230,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     } catch (e) {
       debugPrint('Erro ao trocar senha: $e');
       _showSnack('Não foi possível trocar a senha.');
+    } finally {
+
     }
   }
 
@@ -236,6 +245,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (password == null || !mounted) return;
 
     final repo = ref.read(conversationRepositoryProvider);
+
     try {
       await repo.unprotectConversation(conversation.id, password);
       if (!mounted) return;
@@ -246,6 +256,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     } catch (e) {
       debugPrint('Erro ao remover proteção: $e');
       _showSnack('Não foi possível remover a proteção.');
+    } finally {
+
     }
   }
 
@@ -302,50 +314,54 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final conversationsAsync = ref.watch(conversationsStreamProvider);
 
     return PopScope(
-      // Com a busca aberta, "voltar" fecha a busca em vez de sair da tela.
       canPop: !_searching,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) _closeSearch();
+        if (!didPop && _searching) _closeSearch();
       },
-      child: Scaffold(
-        appBar: _buildAppBar(),
-        body: conversationsAsync.when(
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (e, _) => Center(child: Text('Erro: $e')),
-          data: (all) {
-            if (all.isEmpty) {
-              return const Center(child: Text('Nenhuma conversa ainda.'));
-            }
-            final conversations = _filter(all);
-            if (conversations.isEmpty) {
-              return const Center(
-                child: Text('Nenhuma conversa encontrada.'),
-              );
-            }
-            return ListView.builder(
-              itemCount: conversations.length,
-                            itemBuilder: (context, index) {
-                final c = conversations[index];
-                return _ConversationTile(
-                  conversation: c,
-                  onOpen: _openConversation,
-                  onRename: _renameConversation,
-                  onDelete: _deleteConversation,
-                  onProtect: _protectConversation,
-                  onChangePassword: _changeConversationPassword,
-                  onUnprotect: _unprotectConversation,
+      child: Stack(
+        children: [
+          Scaffold(
+            appBar: _buildAppBar(),
+            body: conversationsAsync.when(
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (e, _) => Center(child: Text('Erro: $e')),
+              data: (all) {
+                if (all.isEmpty) {
+                  return const Center(child: Text('Nenhuma conversa ainda.'));
+                }
+                final conversations = _filter(all);
+                if (conversations.isEmpty) {
+                  return const Center(
+                    child: Text('Nenhuma conversa encontrada.'),
+                  );
+                }
+                return ListView.builder(
+                  itemCount: conversations.length,
+                  itemBuilder: (context, index) {
+                    final c = conversations[index];
+                    return _ConversationTile(
+                      conversation: c,
+                      onOpen: _openConversation,
+                      onRename: _renameConversation,
+                      onDelete: _deleteConversation,
+                      onProtect: _protectConversation,
+                      onChangePassword: _changeConversationPassword,
+                      onUnprotect: _unprotectConversation,
+                    );
+                  },
                 );
               },
-            );
-          },
-        ),
-        floatingActionButton: _searching
-            ? null
-            : FloatingActionButton(
-                onPressed: _createConversation,
-                tooltip: 'Nova conversa',
-                child: const Icon(Icons.add),
-              ),
+            ),
+            floatingActionButton: _searching
+                ? null
+                : FloatingActionButton(
+                    onPressed: _createConversation,
+                    tooltip: 'Nova conversa',
+                    child: const Icon(Icons.add),
+                  ),
+          ),
+
+        ],
       ),
     );
   }
@@ -375,9 +391,7 @@ class _ConversationTile extends StatelessWidget {
     final protected = conversation.protegidoPorSenha;
 
     return ListTile(
-      leading: Icon(
-        protected ? Icons.lock_outline : Icons.chat_bubble_outline,
-      ),
+      leading: Icon(protected ? Icons.lock_outline : Icons.chat_bubble_outline),
       title: Text(conversation.titulo),
       subtitle: Text(_formatDate(conversation.atualizadoEm)),
       onTap: () => onOpen(conversation),
@@ -401,10 +415,7 @@ class _ConversationTile extends StatelessWidget {
           if (!protected)
             const PopupMenuItem(value: 'protect', child: Text('Definir senha')),
           if (protected) ...[
-            const PopupMenuItem(
-              value: 'change',
-              child: Text('Trocar senha'),
-            ),
+            const PopupMenuItem(value: 'change', child: Text('Trocar senha')),
             const PopupMenuItem(
               value: 'unprotect',
               child: Text('Remover senha'),

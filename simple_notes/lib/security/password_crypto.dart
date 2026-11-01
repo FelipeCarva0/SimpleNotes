@@ -1,8 +1,9 @@
 import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
-
 import 'package:cryptography/cryptography.dart';
+import 'package:flutter/foundation.dart' show compute;
+
 
 /// RF08 — primitivas de senha e cifragem de campos.
 ///
@@ -18,7 +19,7 @@ import 'package:cryptography/cryptography.dart';
 /// - Cada campo cifrado é `base64(nonce(12) || ciphertext || tag(16))` com
 ///   AES-256-GCM. O nonce é aleatório por campo.
 class PasswordCrypto {
-  static const int _iterations = 310000;
+  static const int _iterations = 155000;
   static const int _saltBytes = 16;
   static const int _keyBytes = 32;
   static const int _nonceBytes = 12;
@@ -67,6 +68,28 @@ class PasswordCrypto {
       nonce: salt,
     );
     return key.extractBytes();
+  }
+
+  /// Versão da derivação que roda em **isolate separada** (não trava a UI).
+  /// Usada pelo fluxo de desbloquear/proteger/trocar. `deriveKey` continua
+  /// disponível para testes e para uso quando já estamos fora da main.
+  ///
+  /// `compute` aceita apenas um argumento, por isso passamos um record
+  /// `(password, saltBase64)`.
+  static Future<List<int>> deriveKeyInIsolate({
+    required String password,
+    required String saltBase64,
+  }) {
+    return compute(
+      _deriveKeyTopLevel,
+      (password, saltBase64),
+    );
+  }
+
+  static Future<List<int>> _deriveKeyTopLevel(
+    (String password, String saltBase64) args,
+  ) {
+    return deriveKey(password: args.$1, saltBase64: args.$2);
   }
 
   /// `sha256(chave)` em hex minúsculo — é o que vai para `senhaHash`.

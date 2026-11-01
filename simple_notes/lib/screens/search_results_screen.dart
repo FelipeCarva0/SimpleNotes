@@ -11,6 +11,7 @@ import '../widgets/highlighted_text.dart';
 import '../widgets/tag_chip.dart';
 import '../widgets/tag_picker_many_sheet.dart';
 import '../widgets/search_options_sheet.dart';
+import '../models/message.dart';
 
 /// RF05/4.5/4.6 — lista de resultados de busca dentro de uma Conversa.
 ///
@@ -43,7 +44,9 @@ class _SearchResultsScreenState extends ConsumerState<SearchResultsScreen> {
   // Modo seleção (4.6) — só quando o filtro tem faixa de datas.
   bool _selecting = false;
   final Set<String> _selectedIds = {};
-
+  List<SearchHit>? _hits;
+  bool _computing = false;
+  final Map<MessageFilter, List<SearchHit>> _hitsCache = {};
   bool get _rangeMode => _filter.from != null || _filter.to != null;
 
   void _exitSelection() {
@@ -80,6 +83,7 @@ class _SearchResultsScreenState extends ConsumerState<SearchResultsScreen> {
       // Se a faixa de datas saiu do filtro, o modo seleção perde sentido.
       if (!_rangeMode) _exitSelection();
     });
+    _recomputeHits();
   }
 
   void _clearFilters() {
@@ -87,6 +91,7 @@ class _SearchResultsScreenState extends ConsumerState<SearchResultsScreen> {
       _filter = MessageFilter.empty;
       _exitSelection();
     });
+    _recomputeHits();
   }
 
   Future<void> _pickTagForMany() async {
@@ -140,6 +145,34 @@ class _SearchResultsScreenState extends ConsumerState<SearchResultsScreen> {
     }
   }
 
+  Future<void> _recomputeHits() async {
+    if (_hitsCache.containsKey(_filter)) {
+      setState(() {
+        _hits = _hitsCache[_filter];
+        _computing = false;
+      });
+      return;
+    }
+
+    setState(() => _computing = true);
+
+    final messages =
+        ref.read(messagesStreamProvider(widget.conversationId)).valueOrNull ??
+        const <Message>[];
+
+    // `searchMessages` é O(n) síncrono. Roda em ~5 ms em 10k com cache quente
+    // (6.8). Em conversa protegida com cache frio, a lista já vem decifrada
+    // pelo `watchAllMessages` antes de chegar aqui.
+    final hits = searchMessages(messages, _filter);
+
+    if (!mounted) return;
+    _hitsCache[_filter] = hits;
+    setState(() {
+      _hits = hits;
+      _computing = false;
+    });
+  }
+
   Future<void> _deleteMany() async {
     if (_selectedIds.isEmpty) return;
     final count = _selectedIds.length;
@@ -185,6 +218,14 @@ class _SearchResultsScreenState extends ConsumerState<SearchResultsScreen> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _recomputeHits();
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final messagesAsync = ref.watch(
       messagesStreamProvider(widget.conversationId),
@@ -198,7 +239,12 @@ class _SearchResultsScreenState extends ConsumerState<SearchResultsScreen> {
       ))
         t.id: t,
     };
-
+    // 6.9.3 — se o conjunto de mensagens mudou, o cache de hits fica velho.
+    // (Barato: `clear` só se a identidade da lista mudou.)
+    ref.listen(messagesStreamProvider(widget.conversationId), (_, _) {
+      _hitsCache.clear();
+      if (mounted) _recomputeHits();
+    });
     return PopScope(
       canPop: !_selecting,
       onPopInvokedWithResult: (didPop, _) {
@@ -210,7 +256,10 @@ class _SearchResultsScreenState extends ConsumerState<SearchResultsScreen> {
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (e, _) => Center(child: Text('Erro: $e')),
           data: (messages) {
-            final hits = searchMessages(messages, _filter);
+            final hits = _hits ?? const <SearchHit>[];
+            if (_computing) {
+              return const Center(child: CircularProgressIndicator());
+            }
             if (hits.isEmpty) {
               return Center(
                 child: Padding(
@@ -239,7 +288,7 @@ class _SearchResultsScreenState extends ConsumerState<SearchResultsScreen> {
 
             return ListView.separated(
               itemCount: hits.length,
-              separatorBuilder: (_, _) => const Divider(height: 1),
+              separatorBuilder: (context, index) => const Divider(height: 1),
               itemBuilder: (context, index) {
                 final hit = hits[index];
                 final checked = _selectedIds.contains(hit.message.id);

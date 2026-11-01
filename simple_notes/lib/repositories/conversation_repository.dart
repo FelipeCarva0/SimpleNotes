@@ -12,15 +12,30 @@ import '../security/password_crypto.dart';
 /// operações sobre Mensagem de texto (RF02, RF03). Anexos de arquivo
 /// (RF02.3) entram na Sprint 2 e a associação com Tag (RF04) na Sprint 3 —
 /// ambas reaproveitando esta mesma instância de [AppDatabase].
+
+class _DecryptedFields {
+  final String? conteudoTexto;
+  final String? arquivoNomeOriginal;
+  final String? arquivoNomeExibicao;
+  final String? arquivoMimeType;
+  const _DecryptedFields({
+    this.conteudoTexto,
+    this.arquivoNomeOriginal,
+    this.arquivoNomeExibicao,
+    this.arquivoMimeType,
+  });
+}
+
 class ConversationRepository {
   final AppDatabase db;
   final MediaStorage storage;
   final _uuid = const Uuid();
-  
+
   /// Cache em memória das chaves derivadas, por `conversationId`. Nunca vai
   /// para disco. É o que permite `watchMessages` entregar os campos já
   /// decifrados sem que a `ChatScreen` saiba de criptografia.
   final Map<String, List<int>> _unlockedKeys = {};
+  final Map<String, _DecryptedFields> _plaintextCache = {};
 
   /// True se a conversa está protegida e a chave está na sessão (ou seja,
   /// o usuário já desbloqueou nesta execução do app).
@@ -30,11 +45,12 @@ class ConversationRepository {
   /// Remove a chave da sessão (usado pelo "Bloquear" e ao fechar o app).
   void lockConversation(String conversationId) {
     _unlockedKeys.remove(conversationId);
+    _plaintextCache.removeWhere((_, _) => true);
   }
 
-  /// Remove todas as chaves (chamado no lifecycle / logout).
   void lockAll() {
     _unlockedKeys.clear();
+    _plaintextCache.clear();
   }
 
   ConversationRepository(this.db, this.storage);
@@ -86,8 +102,34 @@ class ConversationRepository {
     );
   }
 
+  /// RF05 — busca por texto em conversa NÃO protegida, direto no SQL.
+  /// Retorna os ids que casam (LIKE, case-insensitive no ASCII; para acentos
+  /// exatos, normalizamos o termo antes de chamar). Se a conversa for
+  /// protegida, retorna `null` (o chamador decide decifrar em memória).
+  Future<List<Message>?> searchMessagesByText(
+    String conversationId,
+    String query,
+  ) async {
+    final protected = await _isProtected(conversationId);
+    if (protected) return null;
+
+    final like = '%${query.replaceAll('%', r'\%').replaceAll('_', r'\_')}%';
+    final query_ = db.select(db.messages)
+      ..where(
+        (m) =>
+            m.conversationId.equals(conversationId) &
+            (m.conteudoTexto.like(like) |
+                m.arquivoNomeOriginal.like(like) |
+                m.arquivoNomeExibicao.like(like)),
+      )
+      ..orderBy([(m) => OrderingTerm(expression: m.position)]);
+    final rows = await query_.get();
+    return rows.map(_messageToModel).toList();
+  }
+
   /// Exclui a Conversa, suas Mensagens e a pasta de mídia no filesystem.
   Future<void> delete(String id) async {
+    _plaintextCache.clear();
     await db.transaction(() async {
       await (db.delete(
         db.messages,
@@ -118,98 +160,176 @@ class ConversationRepository {
   /// a data pode ser sobrescrita manualmente (RF02.6) e ficar "fora de
   /// ordem" em relação à posição — isso é esperado, o conteúdo da Conversa
   /// sempre segue `position`, nunca `data` (ver modelo de dados da spec).
-    Stream<List<Message>> watchMessages(String conversationId) {
+  /// RF06 (chat) — todas as Mensagens de uma Conversa, na ordem de envio
+  /// (`position`). Sprint 6: delega a decifragem para `_decryptRows`, que
+  /// usa `Future.wait` (decifra em paralelo).
+
+  Stream<List<Message>> watchMessages(String conversationId) {
     final query = db.select(db.messages)
       ..where((m) => m.conversationId.equals(conversationId))
       ..orderBy([(m) => OrderingTerm(expression: m.position)]);
 
     return query.watch().asyncMap((rows) async {
-      // A chave em memória só existe se a conversa foi desbloqueada NESTA
-      // sessão. Mas conversa NÃO protegida não tem chave e nem precisa —
-      // o texto no BD já está em claro. Então precisamos saber se a conversa
-      // é protegida para decidir entre "cru", "decifrar" ou "placeholder".
-      final conversation = await (db.select(db.conversations)
-            ..where((c) => c.id.equals(conversationId)))
-          .getSingleOrNull();
-      final isProtected = conversation?.protegidoPorSenha ?? false;
-      final key = _unlockedKeys[conversationId];
-
+      final isProtected = await _isProtected(conversationId);
+      final ordered = rows.reversed.toList();
       if (!isProtected) {
-        // Conversa não protegida: entrega tudo como está no BD.
-        return rows.map(_messageToModel).toList();
+        return ordered.map(_messageToModel).toList();
       }
-
-      if (key == null) {
-        // Protegida e não desbloqueada: entrega placeholders.
-        // (Na prática, a ChatScreen só é aberta após o gate da Home; este
-        // ramo só cobre casos raros, como hot restart com a tela aberta.)
-        return rows.map(_withPlaceholders).toList();
-      }
-
-      // Protegida e desbloqueada: decifra cada campo.
-      final out = <Message>[];
-      for (final row in rows) {
-        out.add(await _decryptRow(row, key));
-      }
-      return out;
+      final key = _unlockedKeys[conversationId];
+      return _decryptRows(ordered, true, key);
     });
   }
 
-  /// Versão "crua" da linha, sem tocar em nada (usada em conversa não
-  /// protegida). Só existe para deixar explícito o caminho.
-  Message _withPlaceholders(MessageRow row) => _messageToModel(
-        row,
-        overrides: (
-          conteudoTexto: row.conteudoTexto == null ? null : '••••••',
-          arquivoNomeOriginal:
-              row.arquivoNomeOriginal == null ? null : '••••',
-          arquivoNomeExibicao:
-              row.arquivoNomeExibicao == null ? null : '••••',
-          arquivoMimeType: row.arquivoMimeType == null ? null : '••••',
-        ),
-      );
+  // ---------------------------------------------------------------------
+  // Sprint 6 — paginação e contagem
+  // ---------------------------------------------------------------------
 
-    Future<Message> _decryptRow(MessageRow row, List<int> key) async {
-    if (row.tipo == MessageType.texto) {
-      final raw = row.conteudoTexto;
-      final shown = raw == null
-          ? null
-          : await PasswordCrypto.decryptField(raw, key);
-      return _messageToModel(
-        row,
-        overrides: (
-          conteudoTexto: shown,
-          arquivoNomeOriginal: row.arquivoNomeOriginal,
-          arquivoNomeExibicao: row.arquivoNomeExibicao,
-          arquivoMimeType: row.arquivoMimeType,
-        ),
-      );
+  /// Página "de chat": devolve as [limit] mensagens MAIS RECENTES
+  /// (maior `position`) começando a [offset] mensagens do fim. A ordem
+  /// devolvida é **crescente** (mais antigas primeiro) — igual ao
+  /// `watchMessages`.
+  ///
+  /// - `offset: 0` → as `limit` mais recentes.
+  /// - `offset: 100` → as `limit` anteriores a essas.
+  ///
+  /// Usada pela `ChatScreen`. A `SearchResultsScreen` usa
+  /// `watchAllMessages` (sem limite).
+  Stream<List<Message>> watchMessagesPaginated(
+    String conversationId, {
+    int limit = 100,
+    int offset = 0,
+  }) {
+    final query = db.select(db.messages)
+      ..where((m) => m.conversationId.equals(conversationId))
+      ..orderBy([(m) => OrderingTerm.desc(m.position)])
+      ..limit(limit, offset: offset);
+
+    return query.watch().asyncMap((rows) async {
+      final isProtected = await _isProtected(conversationId);
+      if (!isProtected) {
+        // Caminho rápido: sem decifrar, sem Future.wait, sem cache.
+        return rows.map(_messageToModel).toList();
+      }
+      final key = _unlockedKeys[conversationId];
+      return _decryptRows(rows, true, key);
+    });
+  }
+
+  /// Igual a [watchMessages], sem paginação. Usado pela `SearchResultsScreen`
+  /// para varrer a conversa inteira (a paginação da `ChatScreen` não pode
+  /// afetar a busca).
+  Stream<List<Message>> watchAllMessages(String conversationId) =>
+      watchMessages(conversationId);
+
+  /// Quantas mensagens a conversa tem. Usado pela `ChatScreen` para saber
+  /// quando parar de paginar.
+  Future<int> countMessages(String conversationId) async {
+    final count = db.messages.id.count();
+    final row =
+        await (db.selectOnly(db.messages)
+              ..addColumns([count])
+              ..where(db.messages.conversationId.equals(conversationId)))
+            .getSingle();
+    return row.read(count) ?? 0;
+  }
+
+  /// Consulta `protegidoPorSenha` da conversa. Barato (índice implícito em
+  /// `conversations.id`).
+  Future<bool> _isProtected(String conversationId) async {
+    final row = await (db.select(
+      db.conversations,
+    )..where((c) => c.id.equals(conversationId))).getSingleOrNull();
+    return row?.protegidoPorSenha ?? false;
+  }
+
+  /// Aplica decifragem (ou placeholder) às linhas conforme o estado da
+  /// conversa e da sessão.
+  ///
+  /// - Conversa **não protegida** → texto cru (sem decifrar).
+  /// - Protegida + chave em sessão → decifra cada campo, em paralelo.
+  /// - Protegida + sem chave → placeholders (`'••••••'` / `'••••'`).
+  Future<List<Message>> _decryptRows(
+    List<MessageRow> rows,
+    bool isProtected,
+    List<int>? key,
+  ) async {
+    if (!isProtected) {
+      return rows.map(_messageToModel).toList();
     }
+    if (key == null) {
+      return rows.map(_withPlaceholders).toList();
+    }
+    return Future.wait(
+      rows.map((row) async {
+        // 6.8: cache quente → re-render instantâneo.
+        final cached = _plaintextCache[row.id];
+        if (cached != null) {
+          return _messageToModel(
+            row,
+            overrides: (
+              conteudoTexto: cached.conteudoTexto,
+              arquivoNomeOriginal: cached.arquivoNomeOriginal,
+              arquivoNomeExibicao: cached.arquivoNomeExibicao,
+              arquivoMimeType: cached.arquivoMimeType,
+            ),
+          );
+        }
 
-    final rawOriginal = row.arquivoNomeOriginal;
-    final rawExibicao = row.arquivoNomeExibicao;
-    final rawMime = row.arquivoMimeType;
+        _DecryptedFields fields;
+        if (row.tipo == MessageType.texto) {
+          final raw = row.conteudoTexto;
+          fields = _DecryptedFields(
+            conteudoTexto: raw == null
+                ? null
+                : await PasswordCrypto.decryptField(raw, key),
+            arquivoNomeOriginal: row.arquivoNomeOriginal,
+            arquivoNomeExibicao: row.arquivoNomeExibicao,
+            arquivoMimeType: row.arquivoMimeType,
+          );
+        } else {
+          final rawOriginal = row.arquivoNomeOriginal;
+          final rawExibicao = row.arquivoNomeExibicao;
+          final rawMime = row.arquivoMimeType;
+          fields = _DecryptedFields(
+            conteudoTexto: row.conteudoTexto,
+            arquivoNomeOriginal: rawOriginal == null
+                ? null
+                : await PasswordCrypto.decryptField(rawOriginal, key),
+            arquivoNomeExibicao: rawExibicao == null
+                ? null
+                : await PasswordCrypto.decryptField(rawExibicao, key),
+            arquivoMimeType: rawMime == null
+                ? null
+                : await PasswordCrypto.decryptField(rawMime, key),
+          );
+        }
 
-    final nomeOriginal = rawOriginal == null
-        ? null
-        : await PasswordCrypto.decryptField(rawOriginal, key);
-    final nomeExibicao = rawExibicao == null
-        ? null
-        : await PasswordCrypto.decryptField(rawExibicao, key);
-    final mime = rawMime == null
-        ? null
-        : await PasswordCrypto.decryptField(rawMime, key);
-
-    return _messageToModel(
-      row,
-      overrides: (
-        conteudoTexto: row.conteudoTexto,
-        arquivoNomeOriginal: nomeOriginal,
-        arquivoNomeExibicao: nomeExibicao,
-        arquivoMimeType: mime,
-      ),
+        _plaintextCache[row.id] = fields;
+        return _messageToModel(
+          row,
+          overrides: (
+            conteudoTexto: fields.conteudoTexto,
+            arquivoNomeOriginal: fields.arquivoNomeOriginal,
+            arquivoNomeExibicao: fields.arquivoNomeExibicao,
+            arquivoMimeType: fields.arquivoMimeType,
+          ),
+        );
+      }),
     );
   }
+
+  /// Versão "crua" da linha, com placeholders nos campos sensíveis. Usada
+  /// quando a conversa é protegida e a chave não está na sessão (raro: só
+  /// acontece se a `ChatScreen` for aberta sem passar pelo gate da Home).
+  Message _withPlaceholders(MessageRow row) => _messageToModel(
+    row,
+    overrides: (
+      conteudoTexto: row.conteudoTexto == null ? null : '••••••',
+      arquivoNomeOriginal: row.arquivoNomeOriginal == null ? null : '••••',
+      arquivoNomeExibicao: row.arquivoNomeExibicao == null ? null : '••••',
+      arquivoMimeType: row.arquivoMimeType == null ? null : '••••',
+    ),
+  );
 
   /// RF02.1 — salva o texto em composição sem atribuir data. Chamado a cada
   /// pausa de digitação; o debounce fica a cargo da UI (`ChatScreen`), não
@@ -226,10 +346,12 @@ class ConversationRepository {
   /// atribuída neste exato momento, nunca durante a digitação.
   ///
   /// Não faz nada se o rascunho estiver vazio (só espaços em branco).
-    Future<void> sendDraft(String conversationId) async {
-    final conversation = await (db.select(db.conversations)
-          ..where((c) => c.id.equals(conversationId)))
-        .getSingle();
+  Future<void> sendDraft(String conversationId) async {
+    _plaintextCache
+        .clear(); // a nova Mensagem vai invalidar o cache de todas as anteriores
+    final conversation = await (db.select(
+      db.conversations,
+    )..where((c) => c.id.equals(conversationId))).getSingle();
 
     final content = conversation.rascunho.trim();
     if (content.isEmpty) return;
@@ -244,7 +366,9 @@ class ConversationRepository {
     await db.transaction(() async {
       final position = await _nextPosition(conversationId);
 
-      await db.into(db.messages).insert(
+      await db
+          .into(db.messages)
+          .insert(
             MessagesCompanion.insert(
               id: _uuid.v4(),
               conversationId: conversationId,
@@ -255,9 +379,9 @@ class ConversationRepository {
             ),
           );
 
-      await (db.update(db.conversations)
-            ..where((c) => c.id.equals(conversationId)))
-          .write(
+      await (db.update(
+        db.conversations,
+      )..where((c) => c.id.equals(conversationId))).write(
         ConversationsCompanion(
           rascunho: const Value(''),
           atualizadoEm: Value(now),
@@ -270,21 +394,24 @@ class ConversationRepository {
   /// enviada SEM tocar em `data`. A imutabilidade da data é garantida por
   /// este método simplesmente nunca escrever a coluna `data` aqui — não há
   /// heurística de diff/similaridade envolvida (ver nota de RF03 na spec).
-   Future<void> updateMessageContent(String messageId, String newContent) async {
+  Future<void> updateMessageContent(String messageId, String newContent) async {
     // Descobre a conversa da mensagem para saber se precisa cifrar.
-    final row = await (db.select(db.messages)
-          ..where((m) => m.id.equals(messageId)))
-        .getSingleOrNull();
+    _plaintextCache.remove(messageId);
+    final row = await (db.select(
+      db.messages,
+    )..where((m) => m.id.equals(messageId))).getSingleOrNull();
     if (row == null) return;
 
     final stored = await _encodeForStorage(row.conversationId, newContent);
 
-    await (db.update(db.messages)..where((m) => m.id.equals(messageId)))
-        .write(MessagesCompanion(conteudoTexto: Value(stored)));
+    await (db.update(db.messages)..where((m) => m.id.equals(messageId))).write(
+      MessagesCompanion(conteudoTexto: Value(stored)),
+    );
   }
 
   /// RF02.5 — exclusão explícita e distinta de qualquer edição de conteúdo.
   Future<void> deleteMessage(String messageId) async {
+    _plaintextCache.remove(messageId);
     final row = await (db.select(
       db.messages,
     )..where((m) => m.id.equals(messageId))).getSingleOrNull();
@@ -308,13 +435,20 @@ class ConversationRepository {
     );
   }
 
+  /// Sprint 6: `position` passa a usar **gaps de 1000** para permitir
+  /// inserções no meio sem renumerar em massa. Conversas antigas têm
+  /// `position` 0..N-1, que continua sendo uma sequência válida (o gap
+  /// só é criado ao inserir novas).
+  static const int _positionGap = 1000;
+
   Future<int> _nextPosition(String conversationId) async {
     final maxRow =
         await (db.selectOnly(db.messages)
               ..addColumns([db.messages.position.max()])
               ..where(db.messages.conversationId.equals(conversationId)))
             .getSingleOrNull();
-    return (maxRow?.read(db.messages.position.max()) ?? -1) + 1;
+    final last = maxRow?.read(db.messages.position.max());
+    return last == null ? _positionGap : last + _positionGap;
   }
 
   Message _messageToModel(
@@ -324,25 +458,25 @@ class ConversationRepository {
       String? arquivoNomeOriginal,
       String? arquivoNomeExibicao,
       String? arquivoMimeType,
-    })? overrides,
-  }) =>
-      Message(
-        id: row.id,
-        conversationId: row.conversationId,
-        tagId: row.tagId,
-        position: row.position,
-        tipo: row.tipo,
-        conteudoTexto: overrides?.conteudoTexto ?? row.conteudoTexto,
-        arquivoPath: row.arquivoPath,
-        arquivoNomeOriginal:
-            overrides?.arquivoNomeOriginal ?? row.arquivoNomeOriginal,
-        arquivoNomeExibicao:
-            overrides?.arquivoNomeExibicao ?? row.arquivoNomeExibicao,
-        arquivoMimeType: overrides?.arquivoMimeType ?? row.arquivoMimeType,
-        arquivoTamanhoBytes: row.arquivoTamanhoBytes,
-        data: row.data,
-        dataEditadaManualmente: row.dataEditadaManualmente,
-      );
+    })?
+    overrides,
+  }) => Message(
+    id: row.id,
+    conversationId: row.conversationId,
+    tagId: row.tagId,
+    position: row.position,
+    tipo: row.tipo,
+    conteudoTexto: overrides?.conteudoTexto ?? row.conteudoTexto,
+    arquivoPath: row.arquivoPath,
+    arquivoNomeOriginal:
+        overrides?.arquivoNomeOriginal ?? row.arquivoNomeOriginal,
+    arquivoNomeExibicao:
+        overrides?.arquivoNomeExibicao ?? row.arquivoNomeExibicao,
+    arquivoMimeType: overrides?.arquivoMimeType ?? row.arquivoMimeType,
+    arquivoTamanhoBytes: row.arquivoTamanhoBytes,
+    data: row.data,
+    dataEditadaManualmente: row.dataEditadaManualmente,
+  );
 
   // ---------------------------------------------------------------------
   // Mensagem — anexos (RF02.3, RF02.4, RF02.5) — Sprint 2
@@ -351,12 +485,13 @@ class ConversationRepository {
   /// RF02.3 — copia o arquivo para o storage e cria uma Mensagem de anexo
   /// com a data de hoje. Se o banco falhar, remove o arquivo copiado para
   /// não deixar órfão.
-    Future<void> sendAttachment({
+  Future<void> sendAttachment({
     required String conversationId,
     required MessageType tipo,
     required File file,
     required String nomeOriginal,
   }) async {
+    _plaintextCache.clear();
     assert(tipo != MessageType.texto, 'Use sendDraft para texto');
 
     final stored = await storage.saveFile(file, conversationId);
@@ -364,12 +499,15 @@ class ConversationRepository {
     // Cifra os metadados ANTES de abrir a transação (encryptField é async
     // e não precisa estar dentro da tx; a tx só precisa ser atômica sobre
     // as escritas no BD).
-    final storedNomeOriginal =
-        await _encodeForStorage(conversationId, nomeOriginal);
-    final storedNomeExibicao =
-        await _encodeForStorage(conversationId, nomeOriginal);
-    final storedMime =
-        await _encodeForStorage(conversationId, stored.mimeType);
+    final storedNomeOriginal = await _encodeForStorage(
+      conversationId,
+      nomeOriginal,
+    );
+    final storedNomeExibicao = await _encodeForStorage(
+      conversationId,
+      nomeOriginal,
+    );
+    final storedMime = await _encodeForStorage(conversationId, stored.mimeType);
 
     try {
       final now = DateTime.now();
@@ -378,7 +516,9 @@ class ConversationRepository {
       await db.transaction(() async {
         final position = await _nextPosition(conversationId);
 
-        await db.into(db.messages).insert(
+        await db
+            .into(db.messages)
+            .insert(
               MessagesCompanion.insert(
                 id: _uuid.v4(),
                 conversationId: conversationId,
@@ -404,42 +544,49 @@ class ConversationRepository {
   }
 
   /// RF02.4 — altera só o nome de exibição; `data` intocada.
-    Future<void> renameAttachment(String messageId, String novoNome) async {
-    final row = await (db.select(db.messages)
-          ..where((m) => m.id.equals(messageId)))
-        .getSingleOrNull();
+  Future<void> renameAttachment(String messageId, String novoNome) async {
+    _plaintextCache.remove(messageId);
+    final row = await (db.select(
+      db.messages,
+    )..where((m) => m.id.equals(messageId))).getSingleOrNull();
     if (row == null) return;
 
-    final stored =
-        await _encodeForStorage(row.conversationId, novoNome);
+    final stored = await _encodeForStorage(row.conversationId, novoNome);
 
-    await (db.update(db.messages)..where((m) => m.id.equals(messageId)))
-        .write(MessagesCompanion(arquivoNomeExibicao: Value(stored)));
+    await (db.update(db.messages)..where((m) => m.id.equals(messageId))).write(
+      MessagesCompanion(arquivoNomeExibicao: Value(stored)),
+    );
   }
 
   /// RF02.4 — troca o arquivo físico mantendo id, posição, tag, tipo, nome de
   /// exibição e `data`. O arquivo antigo só é apagado depois que o banco
   /// aceitou a atualização.
-    Future<void> replaceAttachmentFile({
+  Future<void> replaceAttachmentFile({
     required String messageId,
     required File newFile,
     required String nomeOriginal,
   }) async {
-    final row = await (db.select(db.messages)
-          ..where((m) => m.id.equals(messageId)))
-        .getSingle();
+    _plaintextCache.remove(messageId);
+    final row = await (db.select(
+      db.messages,
+    )..where((m) => m.id.equals(messageId))).getSingle();
 
     final stored = await storage.saveFile(newFile, row.conversationId);
 
     // Cifra os metadados novos, conforme o estado da conversa.
-    final storedNomeOriginal =
-        await _encodeForStorage(row.conversationId, nomeOriginal);
-    final storedMime =
-        await _encodeForStorage(row.conversationId, stored.mimeType);
+    final storedNomeOriginal = await _encodeForStorage(
+      row.conversationId,
+      nomeOriginal,
+    );
+    final storedMime = await _encodeForStorage(
+      row.conversationId,
+      stored.mimeType,
+    );
 
     try {
-      await (db.update(db.messages)..where((m) => m.id.equals(messageId)))
-          .write(
+      await (db.update(
+        db.messages,
+      )..where((m) => m.id.equals(messageId))).write(
         MessagesCompanion(
           arquivoPath: Value(stored.relativePath),
           arquivoNomeOriginal: Value(storedNomeOriginal),
@@ -492,14 +639,12 @@ class ConversationRepository {
   // Mensagem — reordenação — Sprint 4 (A4)
   // ---------------------------------------------------------------------
 
-  /// Move a Mensagem para o índice [newIndex] da conversa (0 = primeira,
-  /// N-1 = última), renumerando `position` de 0 a N-1.
+  /// Sprint 6: reordenar em conversa grande passa a ser **O(1)** no caso
+  /// comum. A `position` vira uma chave esparsa (gaps de 1000); mover
+  /// calcula a nova posição como a **média entre os vizinhos**. Só quando o
+  /// gap esgota (colisão) é que renumeramos toda a conversa — o que é raro.
   ///
-  /// Devolve o índice ANTERIOR da mensagem (usado pelo "Desfazer"), ou null
-  /// se nada mudou (mensagem inexistente ou já estava nessa posição).
-  ///
-  /// Escreve APENAS `position`: `data`, `dataEditadaManualmente`, `tagId` e o
-  /// `atualizadoEm` da Conversa permanecem intactos.
+  /// Continua devolvendo o índice ANTERIOR (para o "Desfazer") ou null.
   Future<int?> reorderMessage(String messageId, int newIndex) {
     return db.transaction<int?>(() async {
       final row = await (db.select(
@@ -512,25 +657,57 @@ class ConversationRepository {
                 ..where((m) => m.conversationId.equals(row.conversationId))
                 ..orderBy([(m) => OrderingTerm(expression: m.position)]))
               .get();
-
       final oldIndex = rows.indexWhere((m) => m.id == messageId);
       if (oldIndex < 0) return null;
 
-      final last = rows.length - 1;
+      // Lista SEM a mensagem movida, na ordem atual.
+      final others = [...rows]..removeAt(oldIndex);
+      final last = others.length;
       final target = newIndex < 0 ? 0 : (newIndex > last ? last : newIndex);
-      if (target == oldIndex) return null;
 
-      final reordered = [...rows];
-      final moved = reordered.removeAt(oldIndex);
-      reordered.insert(target, moved);
+      // Se o índice final é o mesmo, nada a fazer.
+      final currentIndexInOthers = oldIndex > target ? oldIndex - 1 : oldIndex;
+      if (target == currentIndexInOthers) return null;
 
-      for (var i = 0; i < reordered.length; i++) {
-        if (reordered[i].position == i) continue;
-        await (db.update(db.messages)
-              ..where((m) => m.id.equals(reordered[i].id)))
-            .write(MessagesCompanion(position: Value(i)));
+      // Calcula a nova `position` entre os vizinhos.
+      int newPosition;
+      if (others.isEmpty) {
+        newPosition = _positionGap;
+      } else if (target == 0) {
+        // Antes do primeiro: metade, ou -gap se não houver espaço.
+        final first = others.first.position;
+        newPosition = first ~/ 2;
+        if (newPosition == first) newPosition = first - _positionGap;
+      } else if (target == last) {
+        // Depois do último.
+        newPosition = others.last.position + _positionGap;
+      } else {
+        final prev = others[target - 1].position;
+        final next = others[target].position;
+        newPosition = (prev + next) ~/ 2;
+        if (newPosition == prev || newPosition == next) {
+          // Gap esgotado: renumera a conversa inteira em passos de 1000,
+          // reposiciona a movida e retorna.
+          final reordered = [...others]..insert(target, row);
+          final updates = <(String, int)>[];
+          for (var i = 0; i < reordered.length; i++) {
+            updates.add((reordered[i].id, (i + 1) * _positionGap));
+          }
+          await db.batch((batch) {
+            for (final u in updates) {
+              batch.update(
+                db.messages,
+                MessagesCompanion(position: Value(u.$2)),
+                where: (x) => x.id.equals(u.$1),
+              );
+            }
+          });
+          return oldIndex;
+        }
       }
 
+      await (db.update(db.messages)..where((m) => m.id.equals(messageId)))
+          .write(MessagesCompanion(position: Value(newPosition)));
       return oldIndex;
     });
   }
@@ -602,6 +779,7 @@ class ConversationRepository {
   /// Não altera `atualizadoEm` da Conversa (a exclusão em si já é uma
   /// operação de conteúdo; o padrão vigente é o mesmo de `deleteMessage`).
   Future<void> deleteMessagesMany(Iterable<String> messageIds) async {
+    _plaintextCache.clear();
     final ids = messageIds.toSet();
     if (ids.isEmpty) return;
 
@@ -620,7 +798,7 @@ class ConversationRepository {
     }
   }
 
-    // ---------------------------------------------------------------------
+  // ---------------------------------------------------------------------
   // RF08 — senha e criptografia de metadados por Conversa — Sprint 5
   // ---------------------------------------------------------------------
 
@@ -631,9 +809,10 @@ class ConversationRepository {
   /// Se a conversa já estiver protegida, lança [StateError]. Use
   /// [changeConversationPassword] nesse caso.
   Future<void> protectConversation(String id, String password) async {
-    final row = await (db.select(db.conversations)
-          ..where((c) => c.id.equals(id)))
-        .getSingleOrNull();
+    _plaintextCache.clear();
+    final row = await (db.select(
+      db.conversations,
+    )..where((c) => c.id.equals(id))).getSingleOrNull();
     if (row == null) {
       throw StateError('A conversa não existe mais.');
     }
@@ -642,7 +821,7 @@ class ConversationRepository {
     }
 
     final salt = PasswordCrypto.newSaltBase64();
-    final key = await PasswordCrypto.deriveKey(
+    final key = await PasswordCrypto.deriveKeyInIsolate(
       password: password,
       saltBase64: salt,
     );
@@ -650,32 +829,60 @@ class ConversationRepository {
 
     await db.transaction(() async {
       // Cifra as mensagens existentes.
-      final messages = await (db.select(db.messages)
-            ..where((m) => m.conversationId.equals(id)))
-          .get();
+      final messages = await (db.select(
+        db.messages,
+      )..where((m) => m.conversationId.equals(id))).get();
 
-      for (final m in messages) {
-        await (db.update(db.messages)..where((x) => x.id.equals(m.id))).write(
-          MessagesCompanion(
-            conteudoTexto: m.conteudoTexto != null
-                ? Value(await PasswordCrypto.encryptField(
-                    m.conteudoTexto!, key))
-                : const Value.absent(),
-            arquivoNomeOriginal: m.arquivoNomeOriginal != null
-                ? Value(await PasswordCrypto.encryptField(
-                    m.arquivoNomeOriginal!, key))
-                : const Value.absent(),
-            arquivoNomeExibicao: m.arquivoNomeExibicao != null
-                ? Value(await PasswordCrypto.encryptField(
-                    m.arquivoNomeExibicao!, key))
-                : const Value.absent(),
-            arquivoMimeType: m.arquivoMimeType != null
-                ? Value(await PasswordCrypto.encryptField(
-                    m.arquivoMimeType!, key))
-                : const Value.absent(),
+      // Fase 1: cifra todos os campos em paralelo.
+      final encoded = await Future.wait(
+        messages.map(
+          (m) async => (
+            id: m.id,
+            conteudoTexto: m.conteudoTexto == null
+                ? null
+                : await PasswordCrypto.encryptField(m.conteudoTexto!, key),
+            arquivoNomeOriginal: m.arquivoNomeOriginal == null
+                ? null
+                : await PasswordCrypto.encryptField(
+                    m.arquivoNomeOriginal!,
+                    key,
+                  ),
+            arquivoNomeExibicao: m.arquivoNomeExibicao == null
+                ? null
+                : await PasswordCrypto.encryptField(
+                    m.arquivoNomeExibicao!,
+                    key,
+                  ),
+            arquivoMimeType: m.arquivoMimeType == null
+                ? null
+                : await PasswordCrypto.encryptField(m.arquivoMimeType!, key),
           ),
-        );
-      }
+        ),
+      );
+
+      // Fase 2: um único batch de UPDATEs.
+      await db.batch((batch) {
+        for (final e in encoded) {
+          batch.update(
+            db.messages,
+            MessagesCompanion(
+              conteudoTexto: e.conteudoTexto != null
+                  ? Value(e.conteudoTexto!)
+                  : const Value.absent(),
+              arquivoNomeOriginal: e.arquivoNomeOriginal != null
+                  ? Value(e.arquivoNomeOriginal!)
+                  : const Value.absent(),
+              arquivoNomeExibicao: e.arquivoNomeExibicao != null
+                  ? Value(e.arquivoNomeExibicao!)
+                  : const Value.absent(),
+              arquivoMimeType: e.arquivoMimeType != null
+                  ? Value(e.arquivoMimeType!)
+                  : const Value.absent(),
+            ),
+            where: (x) => x.id.equals(e.id),
+          );
+        }
+      });
 
       // Grava os metadados de senha na conversa.
       await (db.update(db.conversations)..where((c) => c.id.equals(id))).write(
@@ -699,9 +906,10 @@ class ConversationRepository {
   /// Lança [StateError] se a senha estiver errada ou a conversa não estiver
   /// protegida.
   Future<void> unprotectConversation(String id, String password) async {
-    final row = await (db.select(db.conversations)
-          ..where((c) => c.id.equals(id)))
-        .getSingleOrNull();
+    _plaintextCache.clear();
+    final row = await (db.select(
+      db.conversations,
+    )..where((c) => c.id.equals(id))).getSingleOrNull();
     if (row == null) throw StateError('A conversa não existe mais.');
     if (!row.protegidoPorSenha) {
       throw StateError('Esta conversa não está protegida por senha.');
@@ -713,7 +921,7 @@ class ConversationRepository {
       throw StateError('Metadados de senha inconsistentes.');
     }
 
-    final key = await PasswordCrypto.deriveKey(
+    final key = await PasswordCrypto.deriveKeyInIsolate(
       password: password,
       saltBase64: salt,
     );
@@ -723,32 +931,58 @@ class ConversationRepository {
     }
 
     await db.transaction(() async {
-      final messages = await (db.select(db.messages)
-            ..where((m) => m.conversationId.equals(id)))
-          .get();
+      final messages = await (db.select(
+        db.messages,
+      )..where((m) => m.conversationId.equals(id))).get();
 
-      for (final m in messages) {
-        await (db.update(db.messages)..where((x) => x.id.equals(m.id))).write(
-          MessagesCompanion(
-            conteudoTexto: m.conteudoTexto != null
-                ? Value(await PasswordCrypto.decryptField(
-                    m.conteudoTexto!, key))
-                : const Value.absent(),
-            arquivoNomeOriginal: m.arquivoNomeOriginal != null
-                ? Value(await PasswordCrypto.decryptField(
-                    m.arquivoNomeOriginal!, key))
-                : const Value.absent(),
-            arquivoNomeExibicao: m.arquivoNomeExibicao != null
-                ? Value(await PasswordCrypto.decryptField(
-                    m.arquivoNomeExibicao!, key))
-                : const Value.absent(),
-            arquivoMimeType: m.arquivoMimeType != null
-                ? Value(await PasswordCrypto.decryptField(
-                    m.arquivoMimeType!, key))
-                : const Value.absent(),
+      final decoded = await Future.wait(
+        messages.map(
+          (m) async => (
+            id: m.id,
+            conteudoTexto: m.conteudoTexto == null
+                ? null
+                : await PasswordCrypto.decryptField(m.conteudoTexto!, key),
+            arquivoNomeOriginal: m.arquivoNomeOriginal == null
+                ? null
+                : await PasswordCrypto.decryptField(
+                    m.arquivoNomeOriginal!,
+                    key,
+                  ),
+            arquivoNomeExibicao: m.arquivoNomeExibicao == null
+                ? null
+                : await PasswordCrypto.decryptField(
+                    m.arquivoNomeExibicao!,
+                    key,
+                  ),
+            arquivoMimeType: m.arquivoMimeType == null
+                ? null
+                : await PasswordCrypto.decryptField(m.arquivoMimeType!, key),
           ),
-        );
-      }
+        ),
+      );
+
+      await db.batch((batch) {
+        for (final d in decoded) {
+          batch.update(
+            db.messages,
+            MessagesCompanion(
+              conteudoTexto: d.conteudoTexto != null
+                  ? Value(d.conteudoTexto!)
+                  : const Value.absent(),
+              arquivoNomeOriginal: d.arquivoNomeOriginal != null
+                  ? Value(d.arquivoNomeOriginal!)
+                  : const Value.absent(),
+              arquivoNomeExibicao: d.arquivoNomeExibicao != null
+                  ? Value(d.arquivoNomeExibicao!)
+                  : const Value.absent(),
+              arquivoMimeType: d.arquivoMimeType != null
+                  ? Value(d.arquivoMimeType!)
+                  : const Value.absent(),
+            ),
+            where: (x) => x.id.equals(d.id),
+          );
+        }
+      });
 
       await (db.update(db.conversations)..where((c) => c.id.equals(id))).write(
         const ConversationsCompanion(
@@ -772,9 +1006,10 @@ class ConversationRepository {
     String oldPassword,
     String newPassword,
   ) async {
-    final row = await (db.select(db.conversations)
-          ..where((c) => c.id.equals(id)))
-        .getSingleOrNull();
+    _plaintextCache.clear();
+    final row = await (db.select(
+      db.conversations,
+    )..where((c) => c.id.equals(id))).getSingleOrNull();
     if (row == null) throw StateError('A conversa não existe mais.');
     if (!row.protegidoPorSenha) {
       throw StateError('Esta conversa não está protegida por senha.');
@@ -786,7 +1021,7 @@ class ConversationRepository {
       throw StateError('Metadados de senha inconsistentes.');
     }
 
-    final oldKey = await PasswordCrypto.deriveKey(
+    final oldKey = await PasswordCrypto.deriveKeyInIsolate(
       password: oldPassword,
       saltBase64: oldSalt,
     );
@@ -796,53 +1031,83 @@ class ConversationRepository {
     }
 
     final newSalt = PasswordCrypto.newSaltBase64();
-    final newKey = await PasswordCrypto.deriveKey(
+    final newKey = await PasswordCrypto.deriveKeyInIsolate(
       password: newPassword,
       saltBase64: newSalt,
     );
     final newHash = await PasswordCrypto.hashKey(newKey);
 
     await db.transaction(() async {
-      final messages = await (db.select(db.messages)
-            ..where((m) => m.conversationId.equals(id)))
-          .get();
+      final messages = await (db.select(
+        db.messages,
+      )..where((m) => m.conversationId.equals(id))).get();
 
-      for (final m in messages) {
-        await (db.update(db.messages)..where((x) => x.id.equals(m.id))).write(
-          MessagesCompanion(
-            conteudoTexto: m.conteudoTexto != null
-                ? Value(await PasswordCrypto.encryptField(
+      final reencoded = await Future.wait(
+        messages.map(
+          (m) async => (
+            id: m.id,
+            conteudoTexto: m.conteudoTexto == null
+                ? null
+                : await PasswordCrypto.encryptField(
+                    await PasswordCrypto.decryptField(m.conteudoTexto!, oldKey),
+                    newKey,
+                  ),
+            arquivoNomeOriginal: m.arquivoNomeOriginal == null
+                ? null
+                : await PasswordCrypto.encryptField(
                     await PasswordCrypto.decryptField(
-                        m.conteudoTexto!, oldKey),
-                    newKey))
-                : const Value.absent(),
-            arquivoNomeOriginal: m.arquivoNomeOriginal != null
-                ? Value(await PasswordCrypto.encryptField(
+                      m.arquivoNomeOriginal!,
+                      oldKey,
+                    ),
+                    newKey,
+                  ),
+            arquivoNomeExibicao: m.arquivoNomeExibicao == null
+                ? null
+                : await PasswordCrypto.encryptField(
                     await PasswordCrypto.decryptField(
-                        m.arquivoNomeOriginal!, oldKey),
-                    newKey))
-                : const Value.absent(),
-            arquivoNomeExibicao: m.arquivoNomeExibicao != null
-                ? Value(await PasswordCrypto.encryptField(
+                      m.arquivoNomeExibicao!,
+                      oldKey,
+                    ),
+                    newKey,
+                  ),
+            arquivoMimeType: m.arquivoMimeType == null
+                ? null
+                : await PasswordCrypto.encryptField(
                     await PasswordCrypto.decryptField(
-                        m.arquivoNomeExibicao!, oldKey),
-                    newKey))
-                : const Value.absent(),
-            arquivoMimeType: m.arquivoMimeType != null
-                ? Value(await PasswordCrypto.encryptField(
-                    await PasswordCrypto.decryptField(
-                        m.arquivoMimeType!, oldKey),
-                    newKey))
-                : const Value.absent(),
+                      m.arquivoMimeType!,
+                      oldKey,
+                    ),
+                    newKey,
+                  ),
           ),
-        );
-      }
+        ),
+      );
+
+      await db.batch((batch) {
+        for (final e in reencoded) {
+          batch.update(
+            db.messages,
+            MessagesCompanion(
+              conteudoTexto: e.conteudoTexto != null
+                  ? Value(e.conteudoTexto!)
+                  : const Value.absent(),
+              arquivoNomeOriginal: e.arquivoNomeOriginal != null
+                  ? Value(e.arquivoNomeOriginal!)
+                  : const Value.absent(),
+              arquivoNomeExibicao: e.arquivoNomeExibicao != null
+                  ? Value(e.arquivoNomeExibicao!)
+                  : const Value.absent(),
+              arquivoMimeType: e.arquivoMimeType != null
+                  ? Value(e.arquivoMimeType!)
+                  : const Value.absent(),
+            ),
+            where: (x) => x.id.equals(e.id),
+          );
+        }
+      });
 
       await (db.update(db.conversations)..where((c) => c.id.equals(id))).write(
-        ConversationsCompanion(
-          senhaHash: Value(newHash),
-          salt: Value(newSalt),
-        ),
+        ConversationsCompanion(senhaHash: Value(newHash), salt: Value(newSalt)),
       );
     });
 
@@ -857,16 +1122,16 @@ class ConversationRepository {
     String id,
     String password,
   ) async {
-    final row = await (db.select(db.conversations)
-          ..where((c) => c.id.equals(id)))
-        .getSingleOrNull();
+    final row = await (db.select(
+      db.conversations,
+    )..where((c) => c.id.equals(id))).getSingleOrNull();
     if (row == null || !row.protegidoPorSenha) return null;
 
     final salt = row.salt;
     final expectedHash = row.senhaHash;
     if (salt == null || expectedHash == null) return null;
 
-    final key = await PasswordCrypto.deriveKey(
+    final key = await PasswordCrypto.deriveKeyInIsolate(
       password: password,
       saltBase64: salt,
     );
@@ -878,7 +1143,7 @@ class ConversationRepository {
     _unlockedKeys[id] = key;
     return key;
   }
-    // ---------------------------------------------------------------------
+  // ---------------------------------------------------------------------
   // Helper: cifra campos de uma mensagem quando a conversa está protegida
   // ---------------------------------------------------------------------
 
@@ -897,9 +1162,9 @@ class ConversationRepository {
   ) async {
     if (plaintext == null) return null;
 
-    final conv = await (db.select(db.conversations)
-          ..where((c) => c.id.equals(conversationId)))
-        .getSingleOrNull();
+    final conv = await (db.select(
+      db.conversations,
+    )..where((c) => c.id.equals(conversationId))).getSingleOrNull();
     if (conv == null || !conv.protegidoPorSenha) {
       return plaintext;
     }
@@ -914,5 +1179,4 @@ class ConversationRepository {
 
     return PasswordCrypto.encryptField(plaintext, key);
   }
-
 }

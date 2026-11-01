@@ -68,12 +68,24 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   // o usuário saia da tela antes do carregamento inicial terminar.
   bool _draftLoaded = false;
   bool _sendingAttachment = false;
-  int _lastMessageCount = 0;
+  // ---------------------------------------------------------------------
+  // Sprint 6 — paginação + preload
+  // ---------------------------------------------------------------------
+  static const int _pageSize = 100;
+  final List<Message> _ordered = []; // ordem crescente (mais antigas primeiro)
+  final Set<String> _ids = {}; // deduplicação
+  int _totalCount = 0;
+  bool _preloading = false;
+  bool _disposed = false;
+  bool _paginationReady = false;
+  StreamSubscription<List<Message>>? _pageSub;
+  final _positionsListener = ItemPositionsListener.create();
 
   @override
   void initState() {
     super.initState();
     _loadInitialDraft();
+    _initPagination();
   }
 
   Future<void> _loadInitialDraft() async {
@@ -85,6 +97,100 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
       _controller.text = conversation?.rascunho ?? '';
       _draftLoaded = true;
     });
+  }
+
+  // ---------------------------------------------------------------------
+  // Sprint 6 — paginação + preload
+  // ---------------------------------------------------------------------
+
+  Future<void> _initPagination() async {
+    final repo = ref.read(conversationRepositoryProvider);
+
+    _totalCount = await repo.countMessages(widget.conversationId);
+    if (!mounted || _disposed) return;
+
+    // Primeira página (mais recentes).
+    _pageSub?.cancel();
+    _pageSub = repo
+        .watchMessagesPaginated(
+          widget.conversationId,
+          limit: _pageSize,
+          offset: 0,
+        )
+        .listen(_onPage);
+
+    setState(() => _paginationReady = true);
+
+    // 1 página em background (primeira rolagem instantânea).
+    _preloadNext();
+
+    // Scroll-based a partir da 2ª página.
+    _positionsListener.itemPositions.addListener(_onPositionsChanged);
+  }
+
+  void _onPage(List<Message> page) {
+    if (_disposed || !mounted) return;
+    setState(() {
+      for (final m in page) {
+        if (_ids.add(m.id)) _ordered.add(m);
+      }
+      _ordered.sort((a, b) => a.position.compareTo(b.position));
+    });
+    final before = _ordered.length;
+    setState(() {
+      for (final m in page) {
+        if (_ids.add(m.id)) _ordered.add(m);
+      }
+      _ordered.sort((a, b) => a.position.compareTo(b.position));
+    });
+    if (_ordered.length > before) _scrollToBottomOnNextFrame();
+  }
+
+  Future<void> _preloadNext() async {
+    if (_preloading || _loadedCount >= _totalCount) return;
+    _preloading = true;
+    try {
+      final repo = ref.read(conversationRepositoryProvider);
+      final page = await repo
+          .watchMessagesPaginated(
+            widget.conversationId,
+            limit: _pageSize,
+            offset: _loadedCount,
+          )
+          .first;
+      if (_disposed || !mounted) return;
+      setState(() {
+        for (final m in page) {
+          if (_ids.add(m.id)) _ordered.add(m);
+        }
+        _ordered.sort((a, b) => a.position.compareTo(b.position));
+      });
+      final before = _ordered.length;
+      setState(() {
+        for (final m in page) {
+          if (_ids.add(m.id)) _ordered.add(m);
+        }
+        _ordered.sort((a, b) => a.position.compareTo(b.position));
+      });
+      if (_ordered.length > before) _scrollToBottomOnNextFrame();
+    } finally {
+      _preloading = false;
+    }
+  }
+
+  int get _loadedCount => _ordered.length;
+
+  void _onPositionsChanged() {
+    final positions = _positionsListener.itemPositions.value;
+    if (positions.isEmpty) return;
+    final minVisible = positions
+        .map((p) => p.index)
+        .reduce((a, b) => a < b ? a : b);
+    // `minVisible` é o índice no widget (0 = mais recente). Quando o usuário
+    // se aproxima do fim da janela carregada (mais antigas), preload.
+    if (minVisible >= _loadedCount - 10) {
+      _preloadNext();
+    }
   }
 
   /// RF02.1 — autosave com debounce a cada pausa de digitação.
@@ -111,7 +217,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     await ref
         .read(conversationRepositoryProvider)
         .sendDraft(widget.conversationId);
-
+    _totalCount = await ref
+        .read(conversationRepositoryProvider)
+        .countMessages(widget.conversationId);
     _controller.clear();
     _scrollToBottomOnNextFrame();
   }
@@ -244,6 +352,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             file: picked.file,
             nomeOriginal: picked.nomeOriginal,
           );
+      _totalCount = await ref
+          .read(conversationRepositoryProvider)
+          .countMessages(widget.conversationId);
       _scrollToBottomOnNextFrame();
     } finally {
       // Apaga o temporário (gravação) já copiado para o storage do app.
@@ -282,25 +393,41 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     });
   }
 
-  /// Rola até a mensagem de índice cronológico [index] (de [total]
-  /// mensagens) e a destaca por um instante.
-  void _goToMessage({
+  /// Sprint 6: se a mensagem alvo ainda não está carregada (página muito
+  /// distante), pagina até incluí-la, então rola.
+  Future<void> _goToMessage({
     required int index,
     required int total,
     required String messageId,
-  }) {
-    if (!_itemScrollController.isAttached) return;
+  }) async {
+    // Atualiza o total real antes de paginar.
+    _totalCount = await ref
+        .read(conversationRepositoryProvider)
+        .countMessages(widget.conversationId);
+    if (_disposed || !mounted) return;
 
-    // A lista é invertida: converte o índice cronológico no índice do widget.
+    while (!_ids.contains(messageId) && _loadedCount < _totalCount) {
+      await _preloadNext();
+    }
+    // Carrega páginas até a mensagem estar em memória.
+    while (!_ids.contains(messageId) && _loadedCount < _totalCount) {
+      await _preloadNext();
+    }
+    if (_disposed || !mounted) return;
+    if (!_ids.contains(messageId)) return;
+
+    final idx = _ordered.indexWhere((m) => m.id == messageId);
+    if (idx < 0) return;
+
+    if (!_itemScrollController.isAttached) return;
     _itemScrollController.scrollTo(
-      index: total - 1 - index,
+      index: _ordered.length - 1 - idx,
       alignment: 0.4,
       duration: const Duration(milliseconds: 350),
       curve: Curves.easeInOut,
     );
     _flashHighlight(messageId);
   }
-
   // ---------------------------------------------------------------------
   // Reordenar: segurar e mover (A4.2)
   // ---------------------------------------------------------------------
@@ -900,6 +1027,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     _controller.dispose();
     _highlightTimer?.cancel();
     _autoScrollTimer?.cancel();
+    _disposed = true;
+    _pageSub?.cancel();
+    _positionsListener.itemPositions.removeListener(_onPositionsChanged);
     super.dispose();
   }
 
@@ -998,6 +1128,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     );
     if (confirm != true) return;
     await ref.read(conversationRepositoryProvider).deleteMessage(message.id);
+    _totalCount = await ref
+    .read(conversationRepositoryProvider)
+    .countMessages(widget.conversationId);
   }
 
   void _showMessageActions(Message message) {
@@ -1059,6 +1192,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
               onTap: () {
                 Navigator.pop(context);
                 _deleteMessage(message);
+                
               },
             ),
           ],
@@ -1127,25 +1261,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final conversationAsync = ref.watch(
       conversationByIdProvider(widget.conversationId),
     );
-    final messagesAsync = ref.watch(
-      messagesStreamProvider(widget.conversationId),
-    );
+
     final tagsById = <String, Tag>{
-      for (final t
+      for (final tag
           in ref
               .watch(tagsStreamProvider(widget.conversationId))
               .maybeWhen(data: (tags) => tags, orElse: () => const <Tag>[]))
-        t.id: t,
+        tag.id: tag,
     };
-    // Rola pro fim quando uma mensagem nova chega, sem brigar com o scroll
-    // manual do usuário revendo mensagens antigas (só dispara quando a
-    // contagem cresce).
-    messagesAsync.whenData((messages) {
-      if (messages.length > _lastMessageCount) {
-        _scrollToBottomOnNextFrame();
-      }
-      _lastMessageCount = messages.length;
-    });
 
     return PopScope(
       canPop: !_searchActive,
@@ -1159,104 +1282,97 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         body: Column(
           children: [
             Expanded(
-              child: messagesAsync.when(
-                loading: () => const Center(child: CircularProgressIndicator()),
-                error: (e, _) => Center(child: Text('Erro: $e')),
-                data: (messages) {
-                  if (messages.isEmpty) {
-                    return const Center(
+              child: !_paginationReady
+                  ? const Center(child: CircularProgressIndicator())
+                  : _ordered.isEmpty
+                  ? const Center(
                       child: Text(
                         'Nenhuma mensagem ainda. Escreva algo abaixo.',
                       ),
-                    );
-                  }
-                  return Stack(
-                    key: _listAreaKey,
-                    children: [
-                      ScrollablePositionedList.builder(
-                        itemScrollController: _itemScrollController,
-                        scrollOffsetController: _scrollOffsetController,
-                        reverse: true,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 12,
-                        ),
-                        itemCount: messages.length,
-                        itemBuilder: (context, displayIndex) {
-                          // Lista invertida: converte para o índice cronológico da mensagem.
-                          final index = messages.length - 1 - displayIndex;
-                          final message = messages[index];
-                          final dimmed = _moveActive && message.id == _moveId;
-
-                          return _ItemProbe(
-                            index: index,
-                            registry: _probes,
-                            keepAlive: _moveActive && message.id == _moveId,
-                            child: GestureDetector(
-                              behavior: HitTestBehavior.opaque,
-                              onLongPressStart: (_) =>
-                                  HapticFeedback.mediumImpact(),
-                              onLongPressMoveUpdate: (d) =>
-                                  _onMoveUpdate(message, d),
-                              onLongPressEnd: (_) => _onPressEnd(message),
-                              onLongPressCancel: _onPressCancel,
-                              child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 300),
-                                decoration: BoxDecoration(
-                                  color: message.id == _highlightedId
-                                      ? Theme.of(context).colorScheme.primary
-                                            .withValues(alpha: 0.18)
-                                      : Colors.transparent,
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Opacity(
-                                  opacity: dimmed ? 0.35 : 1.0,
-                                  child: Dismissible(
-                                    key: ValueKey(message.id),
-                                    direction: DismissDirection.horizontal,
-                                    dismissThresholds: const {
-                                      DismissDirection.startToEnd: 0.25,
-                                      DismissDirection.endToStart: 0.25,
-                                    },
-                                    background: const _TagSwipeBackground(),
-                                    secondaryBackground:
-                                        const _DetailsSwipeBackground(),
-                                    confirmDismiss: (direction) async {
-                                      HapticFeedback.lightImpact();
-                                      // Sem await: a linha volta ao lugar na hora.
-                                      if (direction ==
-                                          DismissDirection.startToEnd) {
-                                        _openTagPicker(message);
-                                      } else {
-                                        _openDetails(
-                                          message,
-                                          index + 1,
-                                          messages.length,
-                                          tagsById[message.tagId],
-                                        );
-                                      }
-                                      return false;
-                                    },
-                                    child: MessageBubble(
-                                      message: message,
-                                      tag: tagsById[message.tagId],
-                                      highlight: _highlightFor(message),
-                                      onTap: message.tipo == MessageType.texto
-                                          ? () => _editMessage(message)
-                                          : null,
+                    )
+                  : Stack(
+                      key: _listAreaKey,
+                      children: [
+                        ScrollablePositionedList.builder(
+                          itemScrollController: _itemScrollController,
+                          scrollOffsetController: _scrollOffsetController,
+                          itemPositionsListener: _positionsListener,
+                          reverse: true,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 12,
+                          ),
+                          itemCount: _ordered.length,
+                          itemBuilder: (context, displayIndex) {
+                            final index = _ordered.length - 1 - displayIndex;
+                            final message = _ordered[index];
+                            final dimmed = _moveActive && message.id == _moveId;
+                            return _ItemProbe(
+                              index: index,
+                              registry: _probes,
+                              keepAlive: _moveActive && message.id == _moveId,
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onLongPressStart: (_) =>
+                                    HapticFeedback.mediumImpact(),
+                                onLongPressMoveUpdate: (d) =>
+                                    _onMoveUpdate(message, d),
+                                onLongPressEnd: (_) => _onPressEnd(message),
+                                onLongPressCancel: _onPressCancel,
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 300),
+                                  decoration: BoxDecoration(
+                                    color: message.id == _highlightedId
+                                        ? Theme.of(context).colorScheme.primary
+                                              .withValues(alpha: 0.18)
+                                        : Colors.transparent,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Opacity(
+                                    opacity: dimmed ? 0.35 : 1.0,
+                                    child: Dismissible(
+                                      key: ValueKey(message.id),
+                                      direction: DismissDirection.horizontal,
+                                      dismissThresholds: const {
+                                        DismissDirection.startToEnd: 0.25,
+                                        DismissDirection.endToStart: 0.25,
+                                      },
+                                      background: const _TagSwipeBackground(),
+                                      secondaryBackground:
+                                          const _DetailsSwipeBackground(),
+                                      confirmDismiss: (direction) async {
+                                        HapticFeedback.lightImpact();
+                                        if (direction ==
+                                            DismissDirection.startToEnd) {
+                                          _openTagPicker(message);
+                                        } else {
+                                          _openDetails(
+                                            message,
+                                            index + 1,
+                                            _ordered.length,
+                                            tagsById[message.tagId],
+                                          );
+                                        }
+                                        return false;
+                                      },
+                                      child: MessageBubble(
+                                        message: message,
+                                        tag: tagsById[message.tagId],
+                                        highlight: _highlightFor(message),
+                                        onTap: message.tipo == MessageType.texto
+                                            ? () => _editMessage(message)
+                                            : null,
+                                      ),
                                     ),
                                   ),
                                 ),
                               ),
-                            ),
-                          );
-                        },
-                      ),
-                      _buildMoveOverlay(messages, tagsById),
-                    ],
-                  );
-                },
-              ),
+                            );
+                          },
+                        ),
+                        _buildMoveOverlay(_ordered, tagsById),
+                      ],
+                    ),
             ),
             if (_sendingAttachment) const LinearProgressIndicator(),
             _Composer(
