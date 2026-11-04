@@ -23,6 +23,9 @@ import '../widgets/highlighted_text.dart';
 import '../search/message_filter.dart';
 import '../models/conversation.dart';
 import 'search_results_screen.dart';
+import '../providers/security_providers.dart';
+import '../widgets/tag_picker_many_sheet.dart';
+import '../repositories/new_message.dart';
 
 /// Tela de chat de uma Conversa (RF01, RF02, RF03) — Sprint 1: só mensagens
 /// de texto. Anexos de arquivo (RF02.3) entram na Sprint 2 e o gesto de
@@ -64,11 +67,61 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   int _currentHit = 0; // índice em _hits
   int _currentOccurrence = 0; // índice em _hits[_currentHit].matches
 
+  // ---------------------------------------------------------------------
+  // Sprint 7 (7.2a) — modo seleção
+  // ---------------------------------------------------------------------
+  bool _selecting = false;
+  final Set<String> _selectedIds = {};
+  String? _anchorId;
+
+  void _enterSelection(Message message) {
+    if (_selecting) return;
+    setState(() {
+      _selecting = true;
+      _selectedIds.add(message.id);
+      _anchorId = message.id;
+      // Fecha a busca por palavra: são mutuamente exclusivas.
+      _searchActive = false;
+      _searchQuery = '';
+      _hits = const [];
+      _currentHit = 0;
+      _currentOccurrence = 0;
+    });
+    HapticFeedback.selectionClick();
+  }
+
+  void _exitSelection() {
+    if (!_selecting) return;
+    setState(() {
+      _selecting = false;
+      _selectedIds.clear();
+      _anchorId = null;
+    });
+  }
+
+  void _toggleSelected(String id) {
+    setState(() {
+      if (_selectedIds.contains(id)) {
+        _selectedIds.remove(id);
+      } else {
+        _selectedIds.add(id);
+      }
+      if (_selectedIds.isEmpty) {
+        // Sem nenhuma selecionada: sai do modo, como em apps de mensagem.
+        _selecting = false;
+        _anchorId = null;
+      }
+    });
+  }
+
   // Só ficamos true depois de carregar o rascunho já salvo no banco; evita
   // que o dispose() sobrescreva um rascunho existente com string vazia caso
   // o usuário saia da tela antes do carregamento inicial terminar.
   bool _draftLoaded = false;
   bool _sendingAttachment = false;
+  int _batchTotal = 0;
+  int _batchSent = 0;
+  bool _batchCancelled = false;
   // ---------------------------------------------------------------------
   // Sprint 6 — paginação + preload
   // ---------------------------------------------------------------------
@@ -101,23 +154,43 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
 
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached) {
-      // Descarta tudo que está decifrado em memória.
-      _pageSub?.cancel();
-      _countSub?.cancel();
-      ref.invalidate(messagesStreamProvider(widget.conversationId));
-      if (!mounted) return;
-      setState(() {
-        _locked = true;
-        _ordered.clear();
-        _ids.clear();
-        _hits = const [];
-        _searchActive = false;
-        _searchQuery = '';
-      });
-    } else if (state == AppLifecycleState.resumed && _locked) {
-      // Volta até a Home, que pede a senha de novo.
-      Navigator.of(context).popUntil((route) => route.isFirst);
+      final shield = ref.read(appLockShieldProvider);
+      if (shield.isProtecting) return;
+
+      _discardDecryptedContent();
+    } else if (state == AppLifecycleState.resumed) {
+      // Sprint 7 (7.1e): mesmo que `_locked` tenha ficado false (o escudo
+      // "protegeu" o `paused`), se o repositório não tem mais a chave
+      // (ex.: `onGraceExpired` chamou `lockAll()`), descarta e volta.
+      if (_locked ||
+          !ref
+              .read(conversationRepositoryProvider)
+              .isUnlocked(widget.conversationId)) {
+        _discardDecryptedContent();
+        Navigator.of(context).popUntil((route) => route.isFirst);
+      }
     }
+  }
+
+  /// Sprint 7 (7.1e) — extraído para reuso entre `paused` e `resumed`.
+  void _discardDecryptedContent() {
+    _pageSub?.cancel();
+    _countSub?.cancel();
+    ref.invalidate(messagesStreamProvider(widget.conversationId));
+    if (!mounted) return;
+    setState(() {
+      _locked = true;
+      _ordered.clear();
+      _ids.clear();
+      _hits = const [];
+      _searchActive = false;
+      _searchQuery = '';
+      // Sprint 7 (7.2a) — invariante 17: seleção morre quando a conversa
+      // bloqueia.
+      _selecting = false;
+      _selectedIds.clear();
+      _anchorId = null;
+    });
   }
 
   Future<void> _loadInitialDraft() async {
@@ -236,22 +309,21 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
 
   /// RF02.2 — confirmação de envio (botão de enviar).
   Future<void> _send() async {
-  if (_controller.text.trim().isEmpty) return;
+    if (_controller.text.trim().isEmpty) return;
 
-  _debounce?.cancel();
-  try {
-    final repo = ref.read(conversationRepositoryProvider);
-    await repo.saveDraft(widget.conversationId, _controller.text);
-    await repo.sendDraft(widget.conversationId);
-  } on StateError catch (e) {
-    _showSnack(e.message);
-    return; // mantém o texto no campo
+    _debounce?.cancel();
+    try {
+      final repo = ref.read(conversationRepositoryProvider);
+      await repo.saveDraft(widget.conversationId, _controller.text);
+      await repo.sendDraft(widget.conversationId);
+    } on StateError catch (e) {
+      _showSnack(e.message);
+      return; // mantém o texto no campo
+    }
+    _controller.clear();
+    _scrollToBottomOnNextFrame();
   }
-  _controller.clear();
-  _scrollToBottomOnNextFrame();
-}
 
-  /// RF02.3 — abre o sheet, executa a ação escolhida e envia o anexo.
   Future<void> _onAttachPressed() async {
     if (_sendingAttachment) return;
 
@@ -259,42 +331,47 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     if (action == null || !mounted) return;
 
     final service = ref.read(attachmentServiceProvider);
+    final shield = ref.read(appLockShieldProvider);
+
     final isCapture =
         action == AttachmentAction.camera || action == AttachmentAction.video;
 
-    // Se o Android matar o app durante a câmera, este marcador sobra em disco
-    // e permite recuperar a captura na próxima abertura.
     if (isCapture) await service.markPendingCapture(widget.conversationId);
 
     try {
-      PickedAttachment? picked;
-      switch (action) {
-        case AttachmentAction.camera:
-          picked = await service.takePhoto();
-        case AttachmentAction.gallery:
-          picked = await service.pickImageFromGallery();
-        case AttachmentAction.video:
-          picked = await service.recordVideo();
-        case AttachmentAction.videoGallery:
-          picked = await service.pickVideoFromGallery();
-        case AttachmentAction.audioFile:
-          picked = await service.pickAudioFile();
-        case AttachmentAction.document:
-          picked = await service.pickDocument();
-        case AttachmentAction.audioRecord:
-          picked = await _recordAudio(service);
+      // Sprint 7 (7.3): todos os pickers rodam dentro do escudo (Z1 não
+      // re-bloqueia durante a escolha).
+      if (action == AttachmentAction.camera) {
+        final picked = await shield.run(service.takePhoto);
+        if (picked == null || !mounted) return;
+        await _sendPicked(picked);
+      } else if (action == AttachmentAction.video) {
+        final picked = await shield.run(service.recordVideo);
+        if (picked == null || !mounted) return;
+        await _sendPicked(picked);
+      } else if (action == AttachmentAction.gallery) {
+        final picked = await shield.run(service.pickMultipleMedia);
+        if (picked.isEmpty || !mounted) return;
+        await _sendPickedMany(picked);
+      } else if (action == AttachmentAction.audioRecord) {
+        final picked = await _recordAudio(service);
+        if (picked == null || !mounted) return;
+        await _sendPicked(picked);
+      } else if (action == AttachmentAction.audioFile) {
+        final picked = await shield.run(service.pickMultipleAudioFiles);
+        if (picked.isEmpty || !mounted) return;
+        await _sendPickedMany(picked);
+      } else if (action == AttachmentAction.document) {
+        final picked = await shield.run(service.pickMultipleDocuments);
+        if (picked.isEmpty || !mounted) return;
+        await _sendPickedMany(picked);
       }
-
-      if (picked == null || !mounted) return; // cancelado: sem erro
-
-      await _sendPicked(picked);
     } on AttachmentPermissionException catch (e) {
       _showSnack(e.message);
     } catch (e) {
-      _showSnack('Não foi possível anexar o arquivo.');
+      _showSnack('Não foi possível anexar.');
       debugPrint('Erro ao anexar: $e');
     } finally {
-      // Só chega aqui se o app NÃO foi morto; se foi, o marcador permanece.
       if (isCapture) await service.clearPendingCapture();
     }
   }
@@ -389,6 +466,104 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         await picked.file.delete();
       }
       if (mounted) setState(() => _sendingAttachment = false);
+    }
+  }
+  // ---------------------------------------------------------------------
+  // Sprint 7 (7.3) — importação em lote (S7-11).
+  // ---------------------------------------------------------------------
+
+  /// Envia N anexos escolhidos de uma vez, em **lotes de 10** via
+  /// [ConversationRepository.appendMessages] (7.1a). Cada lote é atômico;
+  /// falha em um lote não desfaz os anteriores.
+  ///
+  /// Comportamento:
+  /// - Progresso "N de M" no [LinearProgressIndicator] com botão
+  ///   **Cancelar**.
+  /// - `isCancelled` consultado entre lotes; se o usuário cancelar,
+  ///   os lotes já enviados **permanecem** e o resto é descartado.
+  /// - Se o envio de um lote lançar, os anteriores **permanecem**, o
+  ///   lote que falhou **não** entra (atomicidade interna do
+  ///   `appendMessages`), e o resto **não** é tentado.
+  /// - Temporários (`isTemporary`) apagados no `finally`.
+  ///
+  /// Ordem final = ordem de seleção; todas com a data de hoje (regra
+  /// do plano: "todas com a data do momento da inclusão, na ordem de
+  /// seleção").
+    Future<void> _sendPickedMany(List<PickedAttachment> picked) async {
+    if (picked.isEmpty) return;
+    if (_sendingAttachment) return;
+
+    final repo = ref.read(conversationRepositoryProvider);
+    const batchSize = 10;
+
+    final total = picked.length;
+    var sent = 0;
+    var failed = false;
+
+    setState(() {
+      _sendingAttachment = true;
+      _batchCancelled = false;
+      _batchTotal = total;
+      _batchSent = 0;
+    });
+
+    try {
+      for (var start = 0; start < total; start += batchSize) {
+        if (_batchCancelled) break;
+        final end = (start + batchSize) > total ? total : start + batchSize;
+        final chunk = picked.sublist(start, end);
+
+        try {
+          final items = chunk
+              .map((p) => NewMessage.arquivo(
+                    tipo: p.tipo,
+                    arquivo: p.file,
+                    nomeOriginal: p.nomeOriginal,
+                  ))
+              .toList();
+
+          await repo.appendMessages(
+            widget.conversationId,
+            items,
+            isCancelled: () => _batchCancelled,
+          );
+          sent += chunk.length;
+          if (mounted) {
+            setState(() => _batchSent = sent);
+          }
+        } catch (e) {
+          debugPrint('Erro ao enviar lote: $e');
+          failed = true;
+          break;
+        }
+      }
+    } finally {
+      for (final p in picked) {
+        if (p.isTemporary && await p.file.exists()) {
+          try {
+            await p.file.delete();
+          } catch (_) {/* ignora */}
+        }
+      }
+      if (mounted) {
+        setState(() {
+          _sendingAttachment = false;
+          _batchTotal = 0;
+          _batchSent = 0;
+          // não zera `_batchCancelled` aqui: o feedback final ainda lê o
+          // valor; zera no próximo envio (setState acima).
+        });
+      }
+    }
+
+    if (!mounted) return;
+
+    if (sent == total) {
+      _scrollToBottomOnNextFrame();
+    } else if (_batchCancelled) {
+      _showSnack('Cancelado. $sent de $total enviados.');
+    } else if (failed) {
+      _showSnack('Falha no envio. $sent de $total enviados.');
     }
   }
 
@@ -569,7 +744,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     if (_moveActive) {
       _finishMove();
     } else {
-      _showMessageActions(message);
+      _enterSelection(message);
     }
   }
 
@@ -759,6 +934,403 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
             builder: (_) => TagsScreen(conversationId: widget.conversationId),
           ),
         );
+    }
+  }
+
+  /// Sprint 7 (7.2a-fix) — itens do `⋮` durante a seleção.
+  /// Regras:
+  /// - Ações em lote (Copiar/Compartilhar/Encaminhar/Excluir/Tag/Data)
+  ///   só fazem sentido com pelo menos 1 mensagem selecionada.
+  /// - Ações individuais (Editar texto/Renomear/Substituir) só com
+  ///   exatamente 1 selecionada, e conforme o tipo dela.
+  List<PopupMenuEntry<String>> _buildSelectionMenuItems() {
+    final n = _selectedIds.length;
+    final onlyOne = n == 1 ? _selectedSingleMessage() : null;
+
+    return [
+      // Sprint 7 (7.2b) — seleção ampla. Ambos habilitados só quando há
+      // âncora (para "até aqui") ou mensagens na conversa (para "tudo").
+      PopupMenuItem(
+        value: 'select_to_anchor',
+        enabled: _anchorId != null,
+        child: const ListTile(
+          leading: Icon(Icons.unfold_more),
+          title: Text('Selecionar até aqui'),
+          contentPadding: EdgeInsets.zero,
+        ),
+      ),
+      PopupMenuItem(
+        value: 'select_all',
+        enabled: _ordered.isNotEmpty || _totalCount > 0,
+        child: const ListTile(
+          leading: Icon(Icons.select_all),
+          title: Text('Selecionar tudo'),
+          contentPadding: EdgeInsets.zero,
+        ),
+      ),
+      const PopupMenuDivider(),
+      PopupMenuItem(
+        value: 'copy',
+        enabled: n > 0,
+        child: const ListTile(
+          leading: Icon(Icons.copy_outlined),
+          title: Text('Copiar'),
+          contentPadding: EdgeInsets.zero,
+        ),
+      ),
+      PopupMenuItem(
+        value: 'share',
+        enabled: n > 0,
+        child: const ListTile(
+          leading: Icon(Icons.share_outlined),
+          title: Text('Compartilhar'),
+          contentPadding: EdgeInsets.zero,
+        ),
+      ),
+      PopupMenuItem(
+        value: 'forward',
+        enabled: n > 0,
+        child: const ListTile(
+          leading: Icon(Icons.forward_outlined),
+          title: Text('Encaminhar'),
+          contentPadding: EdgeInsets.zero,
+        ),
+      ),
+      PopupMenuItem(
+        value: 'tag',
+        enabled: n > 0,
+        child: const ListTile(
+          leading: Icon(Icons.label_outline),
+          title: Text('Definir tag'),
+          contentPadding: EdgeInsets.zero,
+        ),
+      ),
+      PopupMenuItem(
+        value: 'date',
+        enabled: n > 0,
+        child: const ListTile(
+          leading: Icon(Icons.event_outlined),
+          title: Text('Editar data'),
+          contentPadding: EdgeInsets.zero,
+        ),
+      ),
+      // Ações individuais: só com 1 selecionada.
+      if (onlyOne != null && onlyOne.tipo == MessageType.texto)
+        const PopupMenuItem(
+          value: 'edit_text',
+          child: ListTile(
+            leading: Icon(Icons.edit_outlined),
+            title: Text('Editar texto'),
+            contentPadding: EdgeInsets.zero,
+          ),
+        ),
+      if (onlyOne != null && onlyOne.tipo != MessageType.texto) ...[
+        const PopupMenuItem(
+          value: 'rename_file',
+          child: ListTile(
+            leading: Icon(Icons.drive_file_rename_outline),
+            title: Text('Renomear arquivo'),
+            contentPadding: EdgeInsets.zero,
+          ),
+        ),
+        const PopupMenuItem(
+          value: 'replace_file',
+          child: ListTile(
+            leading: Icon(Icons.swap_horiz),
+            title: Text('Substituir arquivo'),
+            contentPadding: EdgeInsets.zero,
+          ),
+        ),
+      ],
+      const PopupMenuDivider(),
+      PopupMenuItem(
+        value: 'delete',
+        enabled: n > 0,
+        child: const ListTile(
+          leading: Icon(Icons.delete_outline),
+          title: Text('Excluir'),
+          contentPadding: EdgeInsets.zero,
+        ),
+      ),
+    ];
+  }
+
+  /// Mensagem única da seleção (se houver exatamente 1).
+  Message? _selectedSingleMessage() {
+    if (_selectedIds.length != 1) return null;
+    final id = _selectedIds.first;
+    for (final m in _ordered) {
+      if (m.id == id) return m;
+    }
+    return null;
+  }
+
+  Future<void> _onSelectionMenuSelected(String value) async {
+    switch (value) {
+      // Sprint 7 (7.2b) — seleção ampla. NÃO saem da seleção: o usuário
+      // acabou de ampliá-la; faz sentido continuar no modo.
+      case 'select_to_anchor':
+        _selectRangeToAnchor();
+        return;
+      case 'select_all':
+        await _selectAll();
+        return;
+
+      case 'edit_text':
+        final m = _selectedSingleMessage();
+        if (m != null) await _editMessage(m);
+      case 'rename_file':
+        final m = _selectedSingleMessage();
+        if (m != null) await _renameAttachment(m);
+      case 'replace_file':
+        final m = _selectedSingleMessage();
+        if (m != null) await _replaceAttachment(m);
+      case 'date':
+        await _editDateMany();
+      case 'tag':
+        await _tagMany();
+      case 'delete':
+        await _deleteMany();
+      case 'copy':
+        await _copySelected();
+      case 'share':
+      case 'forward':
+        // Sprint 7 (7.4/7.5).
+        _showSnack('Em breve (blocos 7.4/7.5).');
+    }
+    // Após qualquer ação **destrutiva/de conteúdo** via `⋮` em seleção,
+    // sair da seleção (comportamento consolidado). As ações de "seleção
+    // ampla" acima já deram `return` antes, mantendo o modo.
+    if (mounted) _exitSelection();
+  }
+  // ---------------------------------------------------------------------
+  // Sprint 7 (7.2b) — cópia e seleção ampla.
+  // ---------------------------------------------------------------------
+
+  /// Copia o **texto** das mensagens de texto selecionadas, em ordem de
+  /// `position`, separadas por linha em branco. Mídia é ignorada com
+  /// aviso (S7-6: copiar binário não é confiável no Flutter).
+  ///
+  /// Usa `getMessagesByIds` (7.1b) — sobrevive a seleções fora da janela
+  /// paginada, porque busca por id no banco.
+  Future<void> _copySelected() async {
+    if (_selectedIds.isEmpty) return;
+    final repo = ref.read(conversationRepositoryProvider);
+
+    List<Message> messages;
+    try {
+      messages = await repo.getMessagesByIds(_selectedIds);
+    } catch (e) {
+      debugPrint('Erro ao buscar mensagens para copiar: $e');
+      _showSnack('Não foi possível copiar.');
+      return;
+    }
+    if (!mounted) return;
+
+    final texts = <String>[];
+    var mediaCount = 0;
+    for (final m in messages) {
+      if (m.tipo == MessageType.texto) {
+        final t = m.conteudoTexto;
+        if (t != null && t.trim().isNotEmpty) texts.add(t);
+      } else {
+        mediaCount++;
+      }
+    }
+
+    if (texts.isEmpty) {
+      _showSnack(
+        mediaCount > 0
+            ? 'Nenhum texto para copiar (só mídia selecionada).'
+            : 'Nada para copiar.',
+      );
+      return;
+    }
+
+    await Clipboard.setData(ClipboardData(text: texts.join('\n\n')));
+    if (!mounted) return;
+
+    final n = texts.length;
+    final base =
+        '$n ${n == 1 ? 'mensagem de texto copiada' : 'mensagens de texto copiadas'}';
+    _showSnack(
+      mediaCount > 0
+          ? '$base. $mediaCount ${mediaCount == 1 ? 'arquivo não copiado' : 'arquivos não copiados'}.'
+          : '$base.',
+    );
+  }
+
+  /// Marca, na janela carregada, todas as mensagens entre `_anchorId` e a
+  /// **última selecionada** (inclusive). Se `_anchorId` não estiver na
+  /// janela (mensagem muito antiga, ainda não paginada), avisa.
+  ///
+  /// Não busca no banco: opera só sobre `_ordered` (a janela). Para
+  /// alcançar fora da janela, use "Selecionar tudo".
+  void _selectRangeToAnchor() {
+    final anchor = _anchorId;
+    if (anchor == null) {
+      _showSnack('Sem âncora: selecione uma mensagem primeiro.');
+      return;
+    }
+
+    final anchorIdx = _ordered.indexWhere((m) => m.id == anchor);
+    if (anchorIdx < 0) {
+      _showSnack(
+        'A âncora não está na janela atual. Role a lista ou use '
+        '"Selecionar tudo".',
+      );
+      return;
+    }
+
+    // Fim do intervalo: a última selecionada por ordem de `position`
+    // (garante que "até aqui" se estenda até o ponto mais recente que o
+    // usuário tocou, não importa a ordem de cliques).
+    int? endIdx;
+    if (_selectedIds.isNotEmpty) {
+      final selectedInWindow = _ordered
+          .asMap()
+          .entries
+          .where((e) => _selectedIds.contains(e.value.id))
+          .map((e) => e.key)
+          .toList();
+      if (selectedInWindow.isNotEmpty) {
+        endIdx = selectedInWindow.reduce((a, b) => a > b ? a : b);
+      }
+    }
+    endIdx ??= anchorIdx;
+
+    final lo = anchorIdx < endIdx ? anchorIdx : endIdx;
+    final hi = anchorIdx < endIdx ? endIdx : anchorIdx;
+
+    setState(() {
+      for (var i = lo; i <= hi; i++) {
+        _selectedIds.add(_ordered[i].id);
+      }
+    });
+    HapticFeedback.selectionClick();
+  }
+
+  void _cancelBatch() {
+    // Setar um flag que o loop de `_sendPickedMany` consulta.
+    _batchCancelled = true;
+  }
+
+  /// Marca todas as mensagens reais da conversa, inclusive as fora da
+  /// janela. Usa `getMessageIds` (7.1b) — só ids, sem conteúdo.
+  ///
+  /// Em conversa protegida, também funciona: `getMessageIds` não decifra
+  /// nada, só lê `id`s ordenados por `position`.
+  Future<void> _selectAll() async {
+    final repo = ref.read(conversationRepositoryProvider);
+    try {
+      final ids = await repo.getMessageIds(widget.conversationId);
+      if (!mounted) return;
+      if (ids.isEmpty) {
+        _showSnack('Nenhuma mensagem nesta conversa.');
+        return;
+      }
+      setState(() {
+        _selectedIds
+          ..clear()
+          ..addAll(ids);
+        // Em "selecionar tudo" a âncora perde sentido: qualquer "até
+        // aqui" posterior seria a mensagem inteira de novo.
+        _anchorId = null;
+      });
+      _showSnack(
+        '${ids.length} ${ids.length == 1 ? 'mensagem selecionada' : 'mensagens selecionadas'}.',
+      );
+    } catch (e) {
+      debugPrint('Erro ao selecionar tudo: $e');
+      _showSnack('Não foi possível selecionar tudo.');
+    }
+  }
+
+  Future<void> _tagMany() async {
+    if (_selectedIds.isEmpty) return;
+    final choice = await showTagPickerManySheet(
+      context,
+      conversationId: widget.conversationId,
+      count: _selectedIds.length,
+    );
+    if (choice == null || !mounted) return;
+    if (choice.tagId == null && !choice.clear) return; // cancelado
+
+    try {
+      await ref
+          .read(conversationRepositoryProvider)
+          .setMessageTagMany(_selectedIds, choice.clear ? null : choice.tagId);
+      if (!mounted) return;
+      _showSnack(
+        choice.clear
+            ? 'Tag removida de ${_selectedIds.length} mensagens.'
+            : 'Tag aplicada a ${_selectedIds.length} mensagens.',
+      );
+    } catch (e) {
+      debugPrint('Erro ao aplicar tag em lote: $e');
+      _showSnack('Não foi possível aplicar a tag.');
+    }
+  }
+
+  /// Edita a data de várias mensagens de uma vez (`setMessageDateMany`).
+  Future<void> _editDateMany() async {
+    if (_selectedIds.isEmpty) return;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now(),
+      firstDate: DateTime(2000),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+      helpText: 'Nova data para as mensagens',
+    );
+    if (picked == null || !mounted) return;
+
+    try {
+      await ref
+          .read(conversationRepositoryProvider)
+          .setMessageDateMany(_selectedIds, picked);
+      if (!mounted) return;
+      _showSnack('Data alterada em ${_selectedIds.length} mensagens.');
+    } catch (e) {
+      debugPrint('Erro ao alterar data em lote: $e');
+      _showSnack('Não foi possível alterar a data.');
+    }
+  }
+
+  /// Exclui várias mensagens (`deleteMessagesMany`, com blocagem de 500
+  /// ids internamente — 7.1c). Confirmação conta mensagens.
+  Future<void> _deleteMany() async {
+    if (_selectedIds.isEmpty) return;
+    final count = _selectedIds.length;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Excluir $count ${count == 1 ? 'mensagem' : 'mensagens'}?'),
+        content: const Text('Essa ação não pode ser desfeita.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Excluir'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+
+    try {
+      await ref
+          .read(conversationRepositoryProvider)
+          .deleteMessagesMany(_selectedIds);
+      if (!mounted) return;
+      _showSnack(
+        '$count ${count == 1 ? 'mensagem excluída' : 'mensagens excluídas'}.',
+      );
+    } catch (e) {
+      debugPrint('Erro ao excluir em lote: $e');
+      _showSnack('Não foi possível excluir.');
     }
   }
 
@@ -1101,18 +1673,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
 
   /// RF02.6 / RF03 — sobrescrita manual da data, independente do fluxo
   /// automático.
-  Future<void> _editDate(Message message) async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: message.data,
-      firstDate: DateTime(2000),
-      lastDate: DateTime.now().add(const Duration(days: 365)),
-    );
-    if (picked == null || !mounted) return;
-    await ref
-        .read(conversationRepositoryProvider)
-        .setMessageDateManually(message.id, picked);
-  }
+  
 
   /// RF04 — abre o sheet de tag da mensagem.
   void _openTagPicker(Message message) {
@@ -1150,95 +1711,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     );
   }
 
-  /// RF02.5 — exclusão explícita, distinta de qualquer edição de conteúdo.
-  Future<void> _deleteMessage(Message message) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Excluir mensagem?'),
-        content: const Text('Essa ação não pode ser desfeita.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancelar'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Excluir'),
-          ),
-        ],
-      ),
-    );
-    if (confirm != true) return;
-    await ref.read(conversationRepositoryProvider).deleteMessage(message.id);
-  }
 
-  void _showMessageActions(Message message) {
-    showModalBottomSheet(
-      context: context,
-      builder: (context) => SafeArea(
-        child: Wrap(
-          children: [
-            // Só para mensagens de texto
-            if (message.tipo == MessageType.texto)
-              ListTile(
-                leading: const Icon(Icons.edit_outlined),
-                title: const Text('Editar texto'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _editMessage(message);
-                },
-              ),
-
-            // Só para anexos (imagem, vídeo, áudio, documento)
-            if (message.tipo != MessageType.texto) ...[
-              ListTile(
-                leading: const Icon(Icons.drive_file_rename_outline),
-                title: const Text('Renomear arquivo'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _renameAttachment(message);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.swap_horiz),
-                title: const Text('Substituir arquivo'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _replaceAttachment(message);
-                },
-              ),
-            ],
-
-            ListTile(
-              leading: const Icon(Icons.event_outlined),
-              title: const Text('Editar data'),
-              onTap: () {
-                Navigator.pop(context);
-                _editDate(message);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.label_outline),
-              title: const Text('Definir tag'),
-              onTap: () {
-                Navigator.pop(context);
-                _openTagPicker(message);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.delete_outline),
-              title: const Text('Excluir'),
-              onTap: () {
-                Navigator.pop(context);
-                _deleteMessage(message);
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
   PreferredSizeWidget _buildNormalAppBar(
     AsyncValue<Conversation?> conversationAsync,
@@ -1250,12 +1723,20 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         error: (_, _) => const Text('Erro'),
       ),
       actions: [
-        PopupMenuButton<String>(
-          onSelected: _onMenuSelected,
-          itemBuilder: (_) => const [
+        // Sprint 7 (7.2a-fix) — `⋮` com sobrecarga: em seleção, mostra
+        // ações em lote; fora, mostra o menu normal.
+        _AnimatedMoreMenu(
+          selecting: _selecting,
+          selectedCount: _selectedIds.length,
+          // Menu normal
+          normalItems: const [
             PopupMenuItem(value: 'search', child: Text('Pesquisar')),
             PopupMenuItem(value: 'tags', child: Text('Gerenciar tags')),
           ],
+          onNormalSelected: _onMenuSelected,
+          // Menu de seleção
+          selectionItems: _buildSelectionMenuItems(),
+          onSelectionSelected: _onSelectionMenuSelected,
         ),
       ],
     );
@@ -1310,9 +1791,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     };
 
     return PopScope(
-      canPop: !_searchActive,
+      canPop: !_searchActive && !_selecting,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) _closeWordSearch();
+        if (didPop) return;
+        if (_selecting) {
+          _exitSelection();
+        } else if (_searchActive) {
+          _closeWordSearch();
+        }
       },
       child: Scaffold(
         appBar: _searchActive
@@ -1346,32 +1832,54 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                             final index = _ordered.length - 1 - displayIndex;
                             final message = _ordered[index];
                             final dimmed = _moveActive && message.id == _moveId;
+                            final isSelected = _selectedIds.contains(
+                              message.id,
+                            );
                             return _ItemProbe(
                               index: index,
                               registry: _probes,
                               keepAlive: _moveActive && message.id == _moveId,
                               child: GestureDetector(
                                 behavior: HitTestBehavior.opaque,
-                                onLongPressStart: (_) =>
-                                    HapticFeedback.mediumImpact(),
-                                onLongPressMoveUpdate: (d) =>
-                                    _onMoveUpdate(message, d),
-                                onLongPressEnd: (_) => _onPressEnd(message),
-                                onLongPressCancel: _onPressCancel,
+                                // Sprint 7 (7.2a): em modo seleção, o long-press não inicia
+                                // reordenar; o toque alterna a seleção.
+                                onTap: _selecting
+                                    ? () => _toggleSelected(message.id)
+                                    : null,
+                                onLongPressStart: _selecting
+                                    ? null
+                                    : (_) => HapticFeedback.mediumImpact(),
+                                onLongPressMoveUpdate: _selecting
+                                    ? null
+                                    : (d) => _onMoveUpdate(message, d),
+                                onLongPressEnd: _selecting
+                                    ? null
+                                    : (_) => _onPressEnd(message),
+                                onLongPressCancel: _selecting
+                                    ? null
+                                    : _onPressCancel,
                                 child: AnimatedContainer(
                                   duration: const Duration(milliseconds: 300),
                                   decoration: BoxDecoration(
-                                    color: message.id == _highlightedId
+                                    color: isSelected
                                         ? Theme.of(context).colorScheme.primary
                                               .withValues(alpha: 0.18)
-                                        : Colors.transparent,
+                                        : (message.id == _highlightedId
+                                              ? Theme.of(context)
+                                                    .colorScheme
+                                                    .primary
+                                                    .withValues(alpha: 0.18)
+                                              : Colors.transparent),
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                   child: Opacity(
                                     opacity: dimmed ? 0.35 : 1.0,
                                     child: Dismissible(
                                       key: ValueKey(message.id),
-                                      direction: DismissDirection.horizontal,
+                                      // Sprint 7 (7.2a): swipe desligado durante a seleção.
+                                      direction: _selecting
+                                          ? DismissDirection.none
+                                          : DismissDirection.horizontal,
                                       dismissThresholds: const {
                                         DismissDirection.startToEnd: 0.25,
                                         DismissDirection.endToStart: 0.25,
@@ -1397,9 +1905,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                                         message: message,
                                         tag: tagsById[message.tagId],
                                         highlight: _highlightFor(message),
-                                        onTap: message.tipo == MessageType.texto
-                                            ? () => _editMessage(message)
-                                            : null,
+                                        // Sprint 7 (7.2a): em modo seleção, `onTap` do balão
+                                        // não deve abrir editor de texto; o toque é tratado pelo
+                                        // GestureDetector externo.
+                                        onTap: _selecting
+                                            ? null
+                                            : (message.tipo == MessageType.texto
+                                                  ? () => _editMessage(message)
+                                                  : null),
+                                        selectionMode: _selecting,
+                                        selected: isSelected,
                                       ),
                                     ),
                                   ),
@@ -1412,7 +1927,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                       ],
                     ),
             ),
-            if (_sendingAttachment) const LinearProgressIndicator(),
+            if (_sendingAttachment)
+              _BatchProgressBar(
+                sent: _batchSent,
+                total: _batchTotal,
+                onCancel: _batchTotal > 0 ? _cancelBatch : null,
+              ),
             _Composer(
               controller: _controller,
               enabled: _draftLoaded,
@@ -1423,6 +1943,53 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Sprint 7 (7.3) — barra de progresso determinada "N de M" com Cancelar.
+class _BatchProgressBar extends StatelessWidget {
+  final int sent;
+  final int total;
+  final VoidCallback? onCancel;
+
+  const _BatchProgressBar({
+    required this.sent,
+    required this.total,
+    this.onCancel,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // Determinado quando há total > 0; senão, indeterminado (envio único
+    // legado via _sendPicked, que não passa por aqui — defensivo).
+    final hasProgress = total > 0;
+    final value = hasProgress ? (sent / total).clamp(0.0, 1.0) : null;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        LinearProgressIndicator(value: value),
+        if (hasProgress)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '$sent de $total',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+                if (onCancel != null)
+                  TextButton(
+                    onPressed: onCancel,
+                    child: const Text('Cancelar'),
+                  ),
+              ],
+            ),
+          ),
+      ],
     );
   }
 }
@@ -1653,6 +2220,83 @@ class _MovePreview extends StatelessWidget {
           ),
           const SizedBox(width: 12),
         ],
+      ),
+    );
+  }
+}
+
+/// Sprint 7 (7.2a-fix) — `⋮` do AppBar com **sobrecarga** durante a seleção.
+///
+/// Fora da seleção: menu normal (Pesquisar / Gerenciar tags).
+/// Em seleção: menu em lote, e o ícone pulsa/realça para sinalizar a
+/// sobrecarga de função.
+class _AnimatedMoreMenu extends StatefulWidget {
+  final bool selecting;
+  final int selectedCount;
+  final List<PopupMenuEntry<String>> normalItems;
+  final void Function(String) onNormalSelected;
+  final List<PopupMenuEntry<String>> selectionItems;
+  final void Function(String) onSelectionSelected;
+
+  const _AnimatedMoreMenu({
+    required this.selecting,
+    required this.selectedCount,
+    required this.normalItems,
+    required this.onNormalSelected,
+    required this.selectionItems,
+    required this.onSelectionSelected,
+  });
+
+  @override
+  State<_AnimatedMoreMenu> createState() => _AnimatedMoreMenuState();
+}
+
+class _AnimatedMoreMenuState extends State<_AnimatedMoreMenu>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulse = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 450),
+  );
+
+  @override
+  void didUpdateWidget(covariant _AnimatedMoreMenu old) {
+    super.didUpdateWidget(old);
+    // Pulsa só na transição "não selecionando" → "selecionando".
+    if (!old.selecting && widget.selecting) {
+      _pulse.forward(from: 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final isSelection = widget.selecting;
+    return AnimatedBuilder(
+      animation: _pulse,
+      builder: (context, child) {
+        // Curva: 0 → 1 → 0 (pulso único).
+        final t = _pulse.value;
+        final pulse = t <= 0.5 ? t * 2 : (1 - t) * 2;
+        final scale = 1.0 + 0.25 * pulse;
+        return Transform.scale(scale: scale, child: child);
+      },
+      child: PopupMenuButton<String>(
+        icon: Icon(
+          isSelection ? Icons.checklist : Icons.more_vert,
+          color: isSelection ? scheme.primary : null,
+        ),
+        tooltip: isSelection ? 'Ações (${widget.selectedCount})' : 'Mais',
+        onSelected: isSelection
+            ? widget.onSelectionSelected
+            : widget.onNormalSelected,
+        itemBuilder: (_) =>
+            isSelection ? widget.selectionItems : widget.normalItems,
       ),
     );
   }

@@ -2,15 +2,18 @@ import 'package:flutter/material.dart';
 
 enum AttachmentAction {
   camera,
+  /// Foto ou vídeo da galeria, **seleção múltipla** (Sprint 7 — 7.3).
   gallery,
+  /// Gravação de vídeo única pela câmera.
   video,
-  videoGallery,
   audioRecord,
+  /// Áudio existente no dispositivo, seleção múltipla.
   audioFile,
+  /// Documento, seleção múltipla.
   document,
 }
 
-/// Bottom sheet de escolha do tipo de anexo (RF02.3).
+/// Bottom sheet de escolha do tipo de anexo (RF02.3 / Sprint 7 — 7.3).
 /// Devolve a [AttachmentAction] escolhida, ou null se fechado.
 Future<AttachmentAction?> showAttachmentPickerSheet(BuildContext context) {
   return showModalBottomSheet<AttachmentAction>(
@@ -23,18 +26,16 @@ Future<AttachmentAction?> showAttachmentPickerSheet(BuildContext context) {
           children: [
             _tile(context, Icons.photo_camera_outlined, 'Tirar foto',
                 AttachmentAction.camera),
-            _tile(context, Icons.photo_library_outlined, 'Foto da galeria',
-                AttachmentAction.gallery),
+            _tile(context, Icons.photo_library_outlined,
+                'Galeria (fotos e vídeos)', AttachmentAction.gallery),
             _tile(context, Icons.videocam_outlined, 'Gravar vídeo',
                 AttachmentAction.video),
-            _tile(context, Icons.video_library_outlined, 'Vídeo da galeria',
-                AttachmentAction.videoGallery),
             _tile(context, Icons.mic_none, 'Gravar áudio',
                 AttachmentAction.audioRecord),
-            _tile(context, Icons.audiotrack_outlined, 'Arquivo de áudio',
-                AttachmentAction.audioFile),
-            _tile(context, Icons.insert_drive_file_outlined, 'Documento',
-                AttachmentAction.document),
+            _tile(context, Icons.audiotrack_outlined,
+                'Áudio do dispositivo', AttachmentAction.audioFile),
+            _tile(context, Icons.insert_drive_file_outlined,
+                'Documentos', AttachmentAction.document),
           ],
         ),
       ),

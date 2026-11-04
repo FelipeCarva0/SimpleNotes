@@ -24,12 +24,24 @@ class MessageBubble extends ConsumerWidget {
   /// Destaque da busca por palavra (4.4). `null` = sem busca ativa.
   final SearchHighlight? highlight;
 
+  /// Sprint 7 (7.2a) — modo seleção. Quando `true`, todos os toques
+  /// internos (abrir arquivo, editar texto via `onTap`) são **ignorados**;
+  /// o toque é tratado pela camada de seleção do `ChatScreen` (via
+  /// `onTap` externo, que será sobrescrito lá). Ver bloco 7.2.
+  final bool selectionMode;
+
+  /// Sprint 7 (7.2a) — se a mensagem está marcada no modo seleção.
+  /// Pinta o balão e desenha um ícone de check no canto.
+  final bool selected;
+
   const MessageBubble({
     super.key,
     required this.message,
     this.tag,
     this.onTap,
     this.highlight,
+    this.selectionMode = false,
+    this.selected = false,
   });
 
   @override
@@ -51,8 +63,11 @@ class MessageBubble extends ConsumerWidget {
             ),
             Align(
               alignment: Alignment.centerRight,
-              child: GestureDetector(
-                onTap: onTap,
+                            child: GestureDetector(
+                // Sprint 7 (7.2a): em modo seleção, o toque do balão é
+                // tratado pela camada externa (ChatScreen); aqui, só
+                // repassamos o que veio de fora.
+                onTap: selectionMode ? onTap : onTap,
                 child: Container(
                   constraints: BoxConstraints(
                     maxWidth: constraints.maxWidth * maxFactor,
@@ -62,7 +77,9 @@ class MessageBubble extends ConsumerWidget {
                       ? const EdgeInsets.all(4)
                       : const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
-                    color: scheme.primaryContainer,
+                    color: selected
+                        ? scheme.secondaryContainer
+                        : scheme.primaryContainer,
                     borderRadius: const BorderRadius.only(
                       topLeft: Radius.circular(14),
                       topRight: Radius.circular(14),
@@ -70,25 +87,51 @@ class MessageBubble extends ConsumerWidget {
                       bottomRight: Radius.circular(2),
                     ),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    mainAxisSize: MainAxisSize.min,
+                  child: Stack(
                     children: [
-                      _content(context, scheme),
-                      if (message.dataEditadaManualmente)
-                        Padding(
-                          padding: EdgeInsets.only(
-                            top: 3,
-                            right: isMedia ? 6 : 0,
-                          ),
-                          child: Tooltip(
-                            message: 'Data editada manualmente',
-                            child: Icon(
-                              Icons.edit_calendar_outlined,
-                              size: 13,
-                              color: scheme.onPrimaryContainer.withValues(
-                                alpha: 0.7,
+                      // Sprint 7 (7.2a): em modo seleção, ignora os toques
+                      // internos (abrir arquivo, editar texto).
+                      IgnorePointer(
+                        ignoring: selectionMode,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _content(context, scheme),
+                            if (message.dataEditadaManualmente)
+                              Padding(
+                                padding: EdgeInsets.only(
+                                  top: 3,
+                                  right: isMedia ? 6 : 0,
+                                ),
+                                child: Tooltip(
+                                  message: 'Data editada manualmente',
+                                  child: Icon(
+                                    Icons.edit_calendar_outlined,
+                                    size: 13,
+                                    color: scheme.onPrimaryContainer
+                                        .withValues(alpha: 0.7),
+                                  ),
+                                ),
                               ),
+                          ],
+                        ),
+                      ),
+                      // Sprint 7 (7.2a): ícone de "selecionado" no canto.
+                      if (selected)
+                        Positioned(
+                          top: 0,
+                          right: 0,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: scheme.primary,
+                              shape: BoxShape.circle,
+                            ),
+                            padding: const EdgeInsets.all(2),
+                            child: Icon(
+                              Icons.check,
+                              size: 14,
+                              color: scheme.onPrimary,
                             ),
                           ),
                         ),

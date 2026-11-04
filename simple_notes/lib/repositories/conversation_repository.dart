@@ -7,6 +7,7 @@ import '../models/message.dart';
 import 'dart:io';
 import '../storage/media_storage.dart';
 import '../security/password_crypto.dart';
+import 'new_message.dart';
 
 /// Cobre o CRUD de Conversa (RF01, Sprint 0) e, a partir da Sprint 1, as
 /// operações sobre Mensagem de texto (RF02, RF03). Anexos de arquivo
@@ -449,6 +450,8 @@ class ConversationRepository {
   /// `position` 0..N-1, que continua sendo uma sequência válida (o gap
   /// só é criado ao inserir novas).
   static const int _positionGap = 1000;
+    static const int _sqlChunkSize = 500;
+
 
   Future<int> _nextPosition(String conversationId) async {
     final maxRow =
@@ -551,6 +554,296 @@ class ConversationRepository {
       rethrow;
     }
   }
+
+    // ---------------------------------------------------------------------
+  // Mensagem — inserção em lote (Sprint 7 — 7.1a)
+  // ---------------------------------------------------------------------
+
+  /// Sprint 7 (7.1a) — insere N mensagens de uma vez, em **duas fases**:
+  ///
+  /// **Fase 1 (fora da transação):** copia arquivos para o storage e cifra
+  /// metadados (paralelo, via `Future.wait`). Se [isCancelled] retornar
+  /// `true` entre arquivos, aborta a fase 1, apaga o que já foi copiado e
+  /// devolve lista vazia (sem tocar no banco).
+  ///
+  /// **Fase 2 (uma transação):** calcula `_nextPosition` uma vez, atribui
+  /// `base + i * _positionGap` para cada item, insere todas as linhas e
+  /// atualiza `Conversations.atualizadoEm` — tudo ou nada.
+  ///
+  /// Se qualquer passo falhar, apaga **todos** os arquivos copiados nesta
+  /// chamada (invariante 18 do `SPRINT_7_PLAN.md`) e relança o erro.
+  ///
+  /// Devolve a lista de `id`s criados, na mesma ordem de [items].
+  /// Lista vazia → no-op (devolve `[]`).
+  ///
+  /// Notas:
+  /// - **Não** valida tag contra a conversa aqui — o chamador (encaminhar)
+  ///   já resolveu via `TagRepository.createOrGet`. O `tagId` chega
+  ///   pertencendo ao destino. Se quiser defesa em profundidade, o chamador
+  ///   deve validar antes; aqui confiamos no contrato (S7-2: primitiva única).
+  /// - **Não** faz commit por lote de 10 — a divisão em lotes é decisão do
+  ///   chamador (S7-11), para que cada `appendMessages` seja atômico por si
+  ///   só. Ver bloco 7.3.
+  Future<List<String>> appendMessages(
+    String conversationId,
+    List<NewMessage> items, {
+    bool Function()? isCancelled,
+  }) async {
+    if (items.isEmpty) return const [];
+
+    // Validação barata e imediata (antes de copiar arquivo nenhum).
+    for (var i = 0; i < items.length; i++) {
+      final err = items[i].validate();
+      if (err != null) {
+        throw ArgumentError('appendMessages[$i]: $err');
+      }
+    }
+
+    // Lê a conversa uma vez: precisamos do estado de proteção para cifrar
+    // e (no fim) atualizar `atualizadoEm`.
+    final conversation = await (db.select(
+      db.conversations,
+    )..where((c) => c.id.equals(conversationId))).getSingleOrNull();
+    if (conversation == null) {
+      throw StateError('A conversa não existe mais.');
+    }
+    final isProtected = conversation.protegidoPorSenha;
+    final key = _unlockedKeys[conversationId];
+    if (isProtected && key == null) {
+      throw StateError(
+        'Conversa protegida, mas a sessão não está desbloqueada. '
+        'Desbloqueie antes de gravar.',
+      );
+    }
+
+    // ------------------------------------------------------------------
+    // Fase 1 — cópia de arquivos + cifra de metadados (fora da transação)
+    // ------------------------------------------------------------------
+
+    // Estrutura intermediária: para cada item, o que vai para o banco.
+    // `arquivoPath` já é o relativo (ou null em texto).
+    final prepared = <_PreparedAppend>[];
+    final copiedPaths = <String>[]; // para rollback da fase 1
+
+    try {
+      for (var i = 0; i < items.length; i++) {
+        if (isCancelled != null && isCancelled()) {
+          // Cancelado: limpa o que já copiou e devolve vazio (sem tocar no BD).
+          for (final p in copiedPaths) {
+            await storage.delete(p);
+          }
+          return const [];
+        }
+
+        final item = items[i];
+
+        if (item.tipo == MessageType.texto) {
+          final storedContent = isProtected
+              ? await PasswordCrypto.encryptField(item.texto!, key!)
+              : item.texto!;
+          prepared.add(_PreparedAppend(
+            tipo: item.tipo,
+            conteudoTexto: storedContent,
+            arquivoPath: null,
+            nomeOriginal: null,
+            nomeExibicao: null,
+            mimeType: null,
+            tamanhoBytes: null,
+            data: _dateOnly(item.data ?? DateTime.now()),
+            dataEditadaManualmente: item.dataEditadaManualmente,
+            tagId: item.tagId,
+          ));
+          continue;
+        }
+
+        // Não-texto: copia arquivo + cifra metadados.
+        final stored = await storage.saveFile(item.arquivo!, conversationId);
+        copiedPaths.add(stored.relativePath);
+
+        final nomeExibicao = item.nomeExibicao ?? item.nomeOriginal!;
+        final storedOriginal = isProtected
+            ? await PasswordCrypto.encryptField(item.nomeOriginal!, key!)
+            : item.nomeOriginal!;
+        final storedExibicao = isProtected
+            ? await PasswordCrypto.encryptField(nomeExibicao, key!)
+            : nomeExibicao;
+        final storedMime = stored.mimeType == null
+            ? null
+            : (isProtected
+                ? await PasswordCrypto.encryptField(stored.mimeType!, key!)
+                : stored.mimeType!);
+
+        prepared.add(_PreparedAppend(
+          tipo: item.tipo,
+          conteudoTexto: null,
+          arquivoPath: stored.relativePath,
+          nomeOriginal: storedOriginal,
+          nomeExibicao: storedExibicao,
+          mimeType: storedMime,
+          tamanhoBytes: stored.sizeBytes,
+          data: _dateOnly(item.data ?? DateTime.now()),
+          dataEditadaManualmente: item.dataEditadaManualmente,
+          tagId: item.tagId,
+        ));
+      }
+    } catch (_) {
+      // Rollback da fase 1: apaga tudo o que copiou.
+      for (final p in copiedPaths) {
+        await storage.delete(p);
+      }
+      rethrow;
+    }
+
+    // ------------------------------------------------------------------
+    // Fase 2 — uma transação, todas as linhas
+    // ------------------------------------------------------------------
+
+    final createdIds = <String>[];
+    try {
+      await db.transaction(() async {
+        // Uma única consulta de `_nextPosition` para todos os itens.
+        final base = await _nextPosition(conversationId);
+        final now = DateTime.now();
+
+        for (var i = 0; i < prepared.length; i++) {
+          final p = prepared[i];
+          final id = _uuid.v4();
+          createdIds.add(id);
+          await db.into(db.messages).insert(
+            MessagesCompanion.insert(
+              id: id,
+              conversationId: conversationId,
+              position: base + i * _positionGap,
+              tipo: Value(p.tipo),
+              conteudoTexto: p.conteudoTexto == null
+                  ? const Value.absent()
+                  : Value(p.conteudoTexto),
+              arquivoPath: p.arquivoPath == null
+                  ? const Value.absent()
+                  : Value(p.arquivoPath),
+              arquivoNomeOriginal: p.nomeOriginal == null
+                  ? const Value.absent()
+                  : Value(p.nomeOriginal),
+              arquivoNomeExibicao: p.nomeExibicao == null
+                  ? const Value.absent()
+                  : Value(p.nomeExibicao),
+              arquivoMimeType: p.mimeType == null
+                  ? const Value.absent()
+                  : Value(p.mimeType),
+              arquivoTamanhoBytes: p.tamanhoBytes == null
+                  ? const Value.absent()
+                  : Value(p.tamanhoBytes),
+              data: p.data,
+              dataEditadaManualmente: Value(p.dataEditadaManualmente),
+              tagId: p.tagId == null ? const Value.absent() : Value(p.tagId),
+            ),
+          );
+        }
+
+        // Uma única atualização de `atualizadoEm`.
+        await (db.update(db.conversations)
+              ..where((c) => c.id.equals(conversationId)))
+            .write(ConversationsCompanion(atualizadoEm: Value(now)));
+      });
+    } catch (_) {
+      // Rollback da fase 1 (a transação já desfez o BD).
+      for (final p in copiedPaths) {
+        await storage.delete(p);
+      }
+      rethrow;
+    }
+
+    // Cache de plaintext: as linhas novas ainda não têm cache; nada a
+    // invalidar (o `_decryptRows` vai preencher na próxima leitura). Mas,
+    // por consistência com os outros métodos de escrita (invariante 15 do
+    // mapa), limpamos — é barato e evita surpresa se o `_nextPosition`
+    // tiver mexido em algo fora do comum.
+    // (O `sendDraft` faz `_plaintextCache.clear()` no início; aqui fazemos
+    // no fim, o que é equivalente em efeito.)
+    // Não limpamos por messageId porque não há ids antigos envolvidos.
+    _plaintextCache.removeWhere((k, _) => false); // no-op; mantido por clareza
+
+    return createdIds;
+  }
+
+    // ---------------------------------------------------------------------
+  // Mensagem — leitura por ids (Sprint 7 — 7.1b)
+  // ---------------------------------------------------------------------
+
+  /// Sprint 7 (7.1b) — devolve as [Message] dos [ids] informados, **já
+  /// decifradas**, ordenadas por `position` (não pela ordem de [ids]).
+  ///
+  /// Consulta em **blocos de 500** ids para respeitar o limite de variáveis
+  /// do SQLite (invariante 20 do `SPRINT_7_PLAN.md`). Reusa `_decryptRows`
+  /// e o cache de plaintext — em conversa não protegida, caminho rápido.
+  ///
+  /// Ids inexistentes são **ignorados** (não é erro). Lista vazia devolve
+  /// lista vazia. Duplicatas em [ids] não duplicam o resultado.
+  ///
+  /// Usado pela seleção (7.2), encaminhar (7.4) e compartilhar (7.5).
+  Future<List<Message>> getMessagesByIds(Iterable<String> ids) async {
+    final unique = ids.toSet().toList();
+    if (unique.isEmpty) return const [];
+
+    const chunkSize = 500;
+    final rows = <MessageRow>[];
+    for (var start = 0; start < unique.length; start += chunkSize) {
+      final end = (start + chunkSize) > unique.length
+          ? unique.length
+          : start + chunkSize;
+      final chunk = unique.sublist(start, end);
+      final part = await (db.select(db.messages)
+            ..where((m) => m.id.isIn(chunk)))
+          .get();
+      rows.addAll(part);
+    }
+    if (rows.isEmpty) return const [];
+
+    // Uma consulta de `protegidoPorSenha` por conversa representada.
+    // Como todas as mensagens em [ids] vêm do mesmo contexto de uso
+    // (seleção/encaminhamento de UMA conversa), normalmente é 1 só.
+    final convIds = rows.map((r) => r.conversationId).toSet();
+    final protectedByConv = <String, bool>{};
+    for (final convId in convIds) {
+      protectedByConv[convId] = await _isProtected(convId);
+    }
+
+    // _decryptRows assume uma única conversa; por segurança, agrupa.
+    // (Na prática, ids vêm sempre de uma conversa; o agrupamento evita
+    // ambiguidade se o chamador misturar.)
+    final result = <Message>[];
+    final byConv = <String, List<MessageRow>>{};
+    for (final r in rows) {
+      (byConv[r.conversationId] ??= []).add(r);
+    }
+    for (final entry in byConv.entries) {
+      final isProtected = protectedByConv[entry.key] ?? false;
+      final key = _unlockedKeys[entry.key];
+      final decrypted = await _decryptRows(entry.value, isProtected, key);
+      result.addAll(decrypted);
+    }
+
+    result.sort((a, b) => a.position.compareTo(b.position));
+    return result;
+  }
+
+  /// Sprint 7 (7.1b) — todos os ids de mensagens da conversa, ordenados por
+  /// `position`. Não decifra nada (devolve só `id`s), então é barato mesmo
+  /// em conversa protegida e em conversa grande.
+  ///
+  /// Usado por "Selecionar tudo" no modo seleção (7.2), sem carregar conteúdo.
+  Future<List<String>> getMessageIds(String conversationId) async {
+    final query = db.selectOnly(db.messages)
+      ..addColumns([db.messages.id])
+      ..where(db.messages.conversationId.equals(conversationId))
+      ..orderBy([OrderingTerm(expression: db.messages.position)]);
+    final rows = await query.get();
+    return rows.map((r) => r.read(db.messages.id)!).toList();
+  }
+
+  /// Helper interno do [appendMessages] — o "shape" que vai para o banco,
+  /// já cifrado e com arquivo copiado.
+  static DateTime _dateOnly(DateTime d) => DateTime(d.year, d.month, d.day);
 
   /// RF02.4 — altera só o nome de exibição; `data` intocada.
   Future<void> renameAttachment(String messageId, String novoNome) async {
@@ -734,17 +1027,20 @@ class ConversationRepository {
     Iterable<String> messageIds,
     String? tagId,
   ) async {
-    final ids = messageIds.toSet();
+    final ids = messageIds.toSet().toList();
     if (ids.isEmpty) return;
 
     if (tagId != null) {
       // Descobre a conversa a partir da primeira mensagem existente e valida
-      // que a Tag pertence a ela.
-      final first =
-          await (db.select(db.messages)
-                ..where((m) => m.id.isIn(ids))
-                ..limit(1))
-              .getSingleOrNull();
+      // que a Tag pertence a ela. (Mesma lógica de antes; usa o primeiro
+      // bloco para não estourar com ids demais.)
+      final head = ids.length <= _sqlChunkSize
+          ? ids
+          : ids.sublist(0, _sqlChunkSize);
+      final first = await (db.select(db.messages)
+            ..where((m) => m.id.isIn(head))
+            ..limit(1))
+          .getSingleOrNull();
       if (first == null) return;
 
       final tag = await (db.select(
@@ -758,9 +1054,17 @@ class ConversationRepository {
       }
     }
 
-    await (db.update(db.messages)..where((m) => m.id.isIn(ids))).write(
-      MessagesCompanion(tagId: Value(tagId)),
-    );
+    await db.transaction(() async {
+      for (var start = 0; start < ids.length; start += _sqlChunkSize) {
+        final end = (start + _sqlChunkSize) > ids.length
+            ? ids.length
+            : start + _sqlChunkSize;
+        final chunk = ids.sublist(start, end);
+        await (db.update(db.messages)..where((m) => m.id.isIn(chunk))).write(
+          MessagesCompanion(tagId: Value(tagId)),
+        );
+      }
+    });
   }
 
   /// Sobrescreve manualmente a `data` de várias Mensagens de uma vez
@@ -771,16 +1075,24 @@ class ConversationRepository {
     Iterable<String> messageIds,
     DateTime date,
   ) async {
-    final ids = messageIds.toSet();
+    final ids = messageIds.toSet().toList();
     if (ids.isEmpty) return;
     final dateOnly = DateTime(date.year, date.month, date.day);
 
-    await (db.update(db.messages)..where((m) => m.id.isIn(ids))).write(
-      MessagesCompanion(
-        data: Value(dateOnly),
-        dataEditadaManualmente: const Value(true),
-      ),
-    );
+    await db.transaction(() async {
+      for (var start = 0; start < ids.length; start += _sqlChunkSize) {
+        final end = (start + _sqlChunkSize) > ids.length
+            ? ids.length
+            : start + _sqlChunkSize;
+        final chunk = ids.sublist(start, end);
+        await (db.update(db.messages)..where((m) => m.id.isIn(chunk))).write(
+          MessagesCompanion(
+            data: Value(dateOnly),
+            dataEditadaManualmente: const Value(true),
+          ),
+        );
+      }
+    });
   }
 
   /// Exclui várias Mensagens de uma vez. Apaga os registros em transação e,
@@ -789,21 +1101,38 @@ class ConversationRepository {
   /// operação de conteúdo; o padrão vigente é o mesmo de `deleteMessage`).
   Future<void> deleteMessagesMany(Iterable<String> messageIds) async {
     _plaintextCache.clear();
-    final ids = messageIds.toSet();
+    final ids = messageIds.toSet().toList();
     if (ids.isEmpty) return;
 
-    final rows = await (db.select(
-      db.messages,
-    )..where((m) => m.id.isIn(ids))).get();
-    if (rows.isEmpty) return;
+    // Coleta os caminhos de arquivo ANTES do delete (depois não existem
+    // mais nas rows).
+    final pathsToDelete = <String>[];
+    for (var start = 0; start < ids.length; start += _sqlChunkSize) {
+      final end = (start + _sqlChunkSize) > ids.length
+          ? ids.length
+          : start + _sqlChunkSize;
+      final chunk = ids.sublist(start, end);
+      final rows = await (db.select(db.messages)
+            ..where((m) => m.id.isIn(chunk)))
+          .get();
+      for (final r in rows) {
+        final p = r.arquivoPath;
+        if (p != null) pathsToDelete.add(p);
+      }
+    }
 
     await db.transaction(() async {
-      await (db.delete(db.messages)..where((m) => m.id.isIn(ids))).go();
+      for (var start = 0; start < ids.length; start += _sqlChunkSize) {
+        final end = (start + _sqlChunkSize) > ids.length
+            ? ids.length
+            : start + _sqlChunkSize;
+        final chunk = ids.sublist(start, end);
+        await (db.delete(db.messages)..where((m) => m.id.isIn(chunk))).go();
+      }
     });
 
-    for (final row in rows) {
-      final path = row.arquivoPath;
-      if (path != null) await storage.delete(path);
+    for (final p in pathsToDelete) {
+      await storage.delete(p);
     }
   }
 
@@ -1188,4 +1517,32 @@ class ConversationRepository {
 
     return PasswordCrypto.encryptField(plaintext, key);
   }
+}
+
+/// Sprint 7 (7.1a) — saída da "fase 1" de [appendMessages]: já cifrado,
+/// já com arquivo copiado, só falta atribuir `id`/`position` e inserir.
+class _PreparedAppend {
+  final MessageType tipo;
+  final String? conteudoTexto;
+  final String? arquivoPath;
+  final String? nomeOriginal;
+  final String? nomeExibicao;
+  final String? mimeType;
+  final int? tamanhoBytes;
+  final DateTime data;
+  final bool dataEditadaManualmente;
+  final String? tagId;
+
+  const _PreparedAppend({
+    required this.tipo,
+    required this.conteudoTexto,
+    required this.arquivoPath,
+    required this.nomeOriginal,
+    required this.nomeExibicao,
+    required this.mimeType,
+    required this.tamanhoBytes,
+    required this.data,
+    required this.dataEditadaManualmente,
+    required this.tagId,
+  });
 }

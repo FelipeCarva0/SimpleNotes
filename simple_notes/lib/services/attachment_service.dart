@@ -86,6 +86,54 @@ class AttachmentService {
   // ----------------------------------------------------------------
   // Documento e áudio existente (file_picker)
   // ----------------------------------------------------------------
+  // ----------------------------------------------------------------
+  // Sprint 7 (7.3) — múltiplas mídias de uma vez.
+  // ----------------------------------------------------------------
+
+  /// Abre o picker nativo com fotos **e** vídeos juntos, permitindo
+  /// seleção múltipla. O `MessageType` de cada item é inferido por
+  /// [inferType] (a partir do MIME).
+  ///
+  /// Devolve `[]` se o usuário cancelar. **Não** distingue
+  /// "cancelei" de "não escolhi nada" — quem chama trata ambos como no-op.
+  Future<List<PickedAttachment>> pickMultipleMedia() async {
+    try {
+      final xs = await _imagePicker.pickMultipleMedia();
+      return xs
+          .map((x) => _fromXFile(x, inferType(x.path)))
+          .whereType<PickedAttachment>()
+          .toList();
+    } catch (e) {
+      throw _mapPickerError(e, 'galeria');
+    }
+  }
+
+  Future<List<PickedAttachment>> pickMultipleAudioFiles() =>
+      pickMultipleFiles(FileType.audio);
+  Future<List<PickedAttachment>> pickMultipleDocuments() =>
+      pickMultipleFiles(FileType.any);
+
+  /// Abre o file picker nativo com múltipla seleção. Tipo inferido por
+  /// MIME. Devolve `[]` se cancelar.
+  Future<List<PickedAttachment>> pickMultipleFiles(FileType type) async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: type,
+        allowMultiple: true,
+      );
+      if (result == null || result.files.isEmpty) return const [];
+      return result.files.where((f) => f.path != null).map((f) {
+        final file = File(f.path!);
+        return PickedAttachment(
+          file: file,
+          nomeOriginal: p.basename(f.path!),
+          tipo: inferType(f.path!),
+        );
+      }).toList();
+    } catch (e) {
+      throw _mapPickerError(e, 'seletor de arquivos');
+    }
+  }
 
   Future<PickedAttachment?> pickDocument() async {
     return _pickWithFilePicker(FileType.any);
@@ -192,14 +240,19 @@ class AttachmentService {
       case MessageType.video:
         return pickVideoFromGallery();
       case MessageType.audio:
-        return _pickWithFilePicker(FileType.audio, forceType: MessageType.audio);
+        return _pickWithFilePicker(
+          FileType.audio,
+          forceType: MessageType.audio,
+        );
       case MessageType.documento:
-        return _pickWithFilePicker(FileType.any, forceType: MessageType.documento);
+        return _pickWithFilePicker(
+          FileType.any,
+          forceType: MessageType.documento,
+        );
       case MessageType.texto:
         return null;
     }
   }
-
 
   // ----------------------------------------------------------------
   // Recuperação de captura perdida (Android pode matar o app durante a câmera)
@@ -235,7 +288,8 @@ class AttachmentService {
     final response = await _imagePicker.retrieveLostData();
     if (response.isEmpty) return null;
 
-    final x = response.file ??
+    final x =
+        response.file ??
         (response.files != null && response.files!.isNotEmpty
             ? response.files!.first
             : null);
@@ -245,7 +299,6 @@ class AttachmentService {
         ? _fromXFile(x, MessageType.video, prefix: 'Vídeo')
         : _fromXFile(x, MessageType.imagem, prefix: 'Foto');
   }
-
 
   // ----------------------------------------------------------------
   // Utilitários
@@ -273,8 +326,9 @@ class AttachmentService {
     if (x == null) return null; // cancelado
     return PickedAttachment(
       file: File(x.path),
-      nomeOriginal:
-          prefix != null ? _friendlyName(prefix, x.path) : p.basename(x.path),
+      nomeOriginal: prefix != null
+          ? _friendlyName(prefix, x.path)
+          : p.basename(x.path),
       tipo: tipo,
     );
   }
