@@ -1,6 +1,6 @@
 ================================================================================
 MAPA DO PROJETO — ARQUIVO (pasta: simple_notes) — Flutter
-Spec: v5.1 | Schema drift: v4 | Estado: Sprint 5 concluída, Sprint 6 pendente
+Spec: v5.1 | Schema drift: v4 | Estado: Sprint 6 concluída (+ correções de bugs)
 ================================================================================
 Objetivo deste arquivo: referência rápida para localizar onde alterar sem reler
 o projeto inteiro. Assinaturas = o que existe hoje no código enviado.
@@ -11,13 +11,16 @@ o projeto inteiro. Assinaturas = o que existe hoje no código enviado.
 - App de chat-consigo-mesmo (offline) para arquivar texto e mídia.
 - Entidades: Conversa (Conversations), Mensagem (Messages), Tag (Tags).
 - Mensagem: tipo {texto, imagem, video, audio, documento}; no máx. 1 Tag;
-  `data` só dia (sem hora), imutável por edição; `position` define a ordem.
+  `data` só dia (sem hora), imutável por edição; `position` define a ordem
+  (agora ESPARSA — gaps de 1000).
 - Tag pertence a UMA Conversa; nome normalizado MAIÚSCULAS, único por conversa.
 - Criptografia (Sprint 5): flag única `protegidoPorSenha` na Conversa. Senha
   ativa gate de UI (Home only) E cifragem de metadados
   (`conteudoTexto`, `arquivoNomeOriginal`, `arquivoNomeExibicao`,
   `arquivoMimeType`). Bytes de mídia e título da conversa ficam em claro.
   Chave (32 bytes) só em memória (`_unlockedKeys` no repositório).
+  Sprint 6: PBKDF2 155k iterações; derivação em isolate; re-bloqueio em
+  background ativo (LockOnBackground).
 - Stack: Riverpod 2.x, drift/SQLite, path_provider, image_picker, file_picker,
   record, video_thumbnail, open_filex, scrollable_positioned_list, mime, uuid,
   cryptography (Sprint 5).
@@ -31,7 +34,7 @@ o projeto inteiro. Assinaturas = o que existe hoje no código enviado.
 lib/
 ├── main.dart
 ├── app.dart
-├── SPRINT_0..5_CHANGES.md
+├── SPRINT_0..6_CHANGES.md      # SPRINT_6_CHANGES.md documenta a Sprint 6
 ├── database/
 │   ├── app_database.dart          # AppDatabase, migrações, PRAGMA FK
 │   ├── app_database.g.dart        # GERADO (build_runner) — não editar
@@ -42,13 +45,14 @@ lib/
 │   └── tag.dart
 ├── repositories/
 │   ├── conversation_repository.dart   # Conversa + Mensagem (texto/anexo/tag/
-│   │                                  # ordem) + senha/criptografia (Sprint 5)
+│   │                                  # ordem/paginação/cache) + senha/cripto
 │   └── tag_repository.dart
 ├── providers/
 │   ├── conversation_providers.dart
 │   └── tag_providers.dart
 ├── security/                      # Sprint 5
-│   └── password_crypto.dart       # PBKDF2, sha256, AES-256-GCM por campo
+│   └── password_crypto.dart       # PBKDF2(155k), sha256, AES-256-GCM,
+│                                  # deriveKeyInIsolate (Sprint 6)
 ├── services/
 │   └── attachment_service.dart    # câmera/galeria/arquivos/gravador + captura perdida
 ├── storage/
@@ -76,7 +80,7 @@ lib/
 │   ├── unlock_dialog.dart         # Sprint 5 — pede senha
 │   ├── password_setup_dialog.dart # Sprint 5 — define senha
 │   ├── password_change_dialog.dart# Sprint 5 — troca senha
-│   ├── lock_on_background.dart    # Sprint 5 (opcional; NÃO ativado por padrão)
+│   ├── lock_on_background.dart    # Sprint 6 — ATIVO (Z1)
 │   └── lost_capture_gate.dart
 ├── utils/
 │   ├── format.dart                # formatBytes, formatDate
@@ -114,12 +118,13 @@ pubspec.yaml; assets/icon/logo.png
   conversa tem `protegidoPorSenha = true`. Caso contrário, texto puro.
   Colunas NÃO cifradas: id, conversationId, tagId, position, tipo, arquivoPath,
   arquivoTamanhoBytes, data, dataEditadaManualmente; e Conversations.titulo.
+  OBS Sprint 6: `position` é ESPARSA (gaps de 1000). Schema inalterado (v4).
 
 [database/app_database.dart]
   @DriftDatabase(tables: [Conversations, Messages, Tags])
   class AppDatabase extends _$AppDatabase
     AppDatabase()
-    int get schemaVersion => 4          # INALTERADO na Sprint 5
+    int get schemaVersion => 4          # INALTERADO nas Sprints 5 e 6
     MigrationStrategy get migration
         onCreate: createAll
         onUpgrade: from<3 => DROP blocks/lines/pages + cria 3 tabelas (destrutivo)
@@ -140,12 +145,15 @@ pubspec.yaml; assets/icon/logo.png
 --------------------------------------------------------------------------------
 3. REPOSITORIES / STORAGE / SERVICES / PROVIDERS / SECURITY
 --------------------------------------------------------------------------------
-[security/password_crypto.dart]  (Sprint 5 — Dart puro, sem plugin nativo)
+[security/password_crypto.dart]  (Sprint 5 + Sprint 6)
   class PasswordCrypto
-    static const _iterations = 310000, _saltBytes = 16, _keyBytes = 32, _nonceBytes = 12
+    static const _iterations = 155000   # Sprint 6 (F): era 310k
+    static const _saltBytes = 16, _keyBytes = 32, _nonceBytes = 12
     static String newSaltBase64()
     static Future<List<int>> deriveKey({required String password, required String saltBase64})
         // PBKDF2-HMAC-SHA256
+    static Future<List<int>> deriveKeyInIsolate({required String password, required String saltBase64})
+        // Sprint 6 (6.1) — roda deriveKey em Isolate.run; UI não trava
     static Future<String> hashKey(List<int> key)   // sha256 hex
     static bool constantTimeEquals(String a, String b)
     static Future<String> encryptField(String plaintext, List<int> key)
@@ -158,8 +166,8 @@ class ConversationRepository(AppDatabase db, MediaStorage storage)
   // Sessão de desbloqueio (Sprint 5)
   final Map<String, List<int>> _unlockedKeys          // chave por conversa
   bool isUnlocked(String conversationId)
-  void lockConversation(String conversationId)
-  void lockAll()
+  void lockConversation(String conversationId)        // Sprint 6: invalida cache
+  void lockAll()                                      // Sprint 6: invalida cache
   Future<String?> _encodeForStorage(String conversationId, String? plaintext)
       // cifra se `protegidoPorSenha` e chave na sessão; cru se não; StateError se
       // protegida e sem chave (defesa em profundidade)
@@ -170,45 +178,75 @@ class ConversationRepository(AppDatabase db, MediaStorage storage)
   Future<Conversation> create({required String titulo})
   Future<void> updateTitulo(String id, String novoTitulo)  // atualiza atualizadoEm
   Future<void> delete(String id)   // tx: messages -> tags -> conversa; depois storage.deleteConversationFolder
+                                   // Sprint 6: invalida cache
   Conversation _toModel(ConversationRow)
-  // Mensagem texto
+
+  // Mensagem — leitura (Sprint 6)
   Stream<List<Message>> watchMessages(String conversationId)
-      // consulta `protegidoPorSenha` a cada emissão:
-      //   não protegida -> cru; protegida + chave -> decifra; protegida sem chave -> placeholder
+      // Sprint 6 (6.9): caminho rápido `!isProtected` (sem Future.wait/decrypt).
+      // Ordem CRONOLÓGICA (sem .reversed — correção de bugs do Lote 2).
+      // protegida + chave -> decifra (Future.wait, 6.2) + cache (C)
+      // protegida sem chave -> placeholder
+  Stream<List<Message>> watchMessagesPaginated(String conversationId, {required int limit})
+      // Sprint 6 (6.5): janela `limit` (offset 0); cada emissão substitui.
+      // Usado pela ChatScreen com limit crescente (100, 200, ...).
+  Stream<List<Message>> watchAllMessages(String conversationId)
+      // Sprint 6 (6.5): sem limite; usado por busca (P2)
+  Stream<int> watchMessageCount(String conversationId)
+      // Correção de bugs: _totalCount da ChatScreen vem daqui
+
+  // Mensagem — escrita
   Future<void> saveDraft(String conversationId, String draft)  // NÃO mexe em atualizadoEm
   Future<void> sendDraft(String conversationId)    // 1 envio = 1 Mensagem; data=hoje;
                                                    // cifra conteudoTexto se protegida
-  Future<void> updateMessageContent(String messageId, String newContent) // NÃO toca em data; cifra
-  Future<void> deleteMessage(String messageId)     // apaga registro + arquivo físico
+                                                   // Sprint 6: invalida cache
+  Future<void> updateMessageContent(String messageId, String newContent) // NÃO toca em data; cifra; invalida cache
+  Future<void> deleteMessage(String messageId)     // apaga registro + arquivo físico; invalida cache
   Future<void> setMessageDateManually(String messageId, DateTime date)    // data só-dia + flag true
-  Future<int> _nextPosition(String conversationId)
+  Future<int> _nextPosition(String conversationId)   // Sprint 6: +_positionGap (1000)
   Message _messageToModel(MessageRow, {overrides?})   // overrides: conteudoTexto/nomes/mime
+
   // Anexos
   Future<void> sendAttachment({required conversationId, required MessageType tipo,
                                required File file, required String nomeOriginal})
       // cifra arquivoNomeOriginal/arquivoNomeExibicao/arquivoMimeType se protegida
-  Future<void> renameAttachment(String messageId, String novoNome)        // só nomeExibicao; cifra
+      // Sprint 6: invalida cache
+  Future<void> renameAttachment(String messageId, String novoNome)        // só nomeExibicao; cifra; invalida cache
   Future<void> replaceAttachmentFile({required messageId, required File newFile,
-                                      required String nomeOriginal})      // cifra nomeOriginal/mime
+                                      required String nomeOriginal})      // cifra nomeOriginal/mime; invalida cache
+
   // Tag
   Future<void> setMessageTag(String messageId, String? tagId)   // valida tag da mesma conversa
   Future<void> setMessageTagMany(Iterable<String> messageIds, String? tagId)  // Sprint 4
-  // Ordem
-  Future<int?> reorderMessage(String messageId, int newIndex)   // renumera position 0..N-1
+
+  // Ordem — Sprint 6 (6.4)
+  Future<int?> reorderMessage(String messageId, int newIndex)   // O(1): position esparsa;
+                                                                // renumera 0..N-1 só em colisão
+  static const int _positionGap = 1000
+
   // Lote (Sprint 4)
   Future<void> setMessageDateMany(Iterable<String> messageIds, DateTime date)
-  Future<void> deleteMessagesMany(Iterable<String> messageIds)
-  // Criptografia (Sprint 5)
+  Future<void> deleteMessagesMany(Iterable<String> messageIds)   // invalida cache
+
+  // Criptografia — Sprint 5 + Sprint 6
   Future<void> protectConversation(String id, String password)
-      // gera salt, deriva chave, cifra metadados existentes, grava
-      // senhaHash/salt/protegidoPorSenha=true em transação; guarda chave na sessão
+      // 6.1: deriveKeyInIsolate; 6.2: Future.wait na cifragem; 6.3: db.batch (2 fases)
+      // em tx; guarda chave na sessão; invalida cache
   Future<void> unprotectConversation(String id, String password)
-      // verifica, decifra tudo, limpa senhaHash/salt/protegidoPorSenha=false; em tx
+      // verifica, decifra tudo (Future.wait), limpa senhaHash/salt/protegidoPorSenha=false
+      // 6.3: db.batch; em tx; invalida cache
   Future<void> changeConversationPassword(String id, String oldPassword, String newPassword)
-      // verifica atual, deriva nova, re-cifra tudo (decifra com antiga, cifra com nova),
-      // troca senhaHash/salt; em tx; mantém sessão com a nova chave
+      // 6.1: deriveKeyInIsolate (2x); 6.2: Future.wait; 6.3: db.batch
+      // em tx; mantém sessão com a nova chave; invalida cache
   Future<List<int>?> verifyConversationPassword(String id, String password)
-      // devolve a chave e guarda em `_unlockedKeys` se correta; senão null
+      // 6.1: deriveKeyInIsolate; devolve a chave e guarda em `_unlockedKeys` se correta
+
+  // Cache de plaintext (Sprint 6 — C)
+  Map<String, _DecryptedFields> _plaintextCache   // LRU 2000 em _decryptRows
+  // Invalidação por messageId em: sendDraft, sendAttachment, updateMessageContent,
+  // renameAttachment, replaceAttachmentFile, deleteMessage, deleteMessagesMany,
+  // delete, protectConversation, unprotectConversation, changeConversationPassword,
+  // lockConversation, lockAll
 
 [repositories/tag_repository.dart]
 class DuplicateTagNameException(String nome)
@@ -263,6 +301,7 @@ class AttachmentService
   conversationsStreamProvider    : StreamProvider<List<Conversation>>
   conversationByIdProvider       : FutureProvider.autoDispose.family<Conversation?, String>
   messagesStreamProvider         : StreamProvider.family<List<Message>, String(conversationId)>
+                                   # Sprint 6: ordem CRONOLÓGICA
 
 [providers/tag_providers.dart]
   tagRepositoryProvider          : Provider<TagRepository>
@@ -272,8 +311,8 @@ class AttachmentService
 --------------------------------------------------------------------------------
 4. TELAS
 --------------------------------------------------------------------------------
-[app.dart]      ArquivoApp (MaterialApp; home: LostCaptureGate(child: HomeScreen()))
-                OBS: LockOnBackground existe mas NÃO está ativado (D2 = Home only).
+[app.dart]      ArquivoApp (MaterialApp; home: LockOnBackground(child: LostCaptureGate(child: HomeScreen())))
+                OBS Sprint 6: LockOnBackground ATIVO (Z1) — em paused/detached chama repo.lockAll().
 [main.dart]     main() -> runApp(ProviderScope(child: ArquivoApp()))
 
 [screens/home_screen.dart]  HomeScreen (ConsumerStatefulWidget) — RF01/RF06/RF06.1/RF08
@@ -300,21 +339,36 @@ class AttachmentService
   Estado: _controller, _itemScrollController (ScrollablePositionedList, reverse:true),
     _highlightedId, _probes, modo mover (_moveActive, _moveId, _moveValueNotifier,
     _scrollOffsetController, _autoScrollTimer, _lastPointer, _lastDropIndex),
-    _draftLoaded, _sendingAttachment, _lastMessageCount,
+    _draftLoaded, _sendingAttachment,
     // Sprint 4.4
     _searchActive, _searchQuery, _hits, _currentHit, _currentOccurrence
+    // Sprint 6 (paginação — reescrita pelas correções de bugs)
+    _pageSize = 100, _windowLimit (cresce +100), _ordered (lista da janela),
+    _ids, _totalCount (de watchMessageCount), _paginationReady, _disposed,
+    _pageSub, _positionsListener
   Rascunho/envio:
     _loadInitialDraft() | _onDraftChanged(String) [debounce 400ms] | _send()
+    // _send trata StateError (conversa bloqueada) sem perder o texto digitado
+  Paginação (Sprint 6):
+    _initPagination()          // assina watchMessagesPaginated(limit: _windowLimit)
+    _onPage(List<Message>)     // substitui _ordered (não acumula); dispara auto-scroll
+    _loadMore()                // amplia _windowLimit em +100
+    _onPositionsChanged(...)   // usa o maior índice visível (mensagem mais antiga);
+                               // pré-carga antes do fim da lista
+    dispose()                  // cancela _pageSub e remove listener (U3)
   Anexos:
     _onAttachPressed() | _recordAudio(AttachmentService) | _renameAttachment(Message)
     _replaceAttachment(Message) | _sendPicked(PickedAttachment) | _showSnack(String)
   Navegação/scroll:
     _scrollToBottomOnNextFrame() | _flashHighlight(String id)
-    _goToMessage({index,total,messageId})
-  Reordenar (long-press + mover):
+    _goToMessage({index,total,messageId})  // Sprint 6: amplia janela, espera emissão
+                                            // e frame antes de rolar (P5)
+  Reordenar (long-press + mover) — Sprint 6:
     _itemRects() | _computeDrop(double, List<Message>) | _updateMove(Offset, List<Message>)
     _onMoveUpdate(Message, LongPressMoveUpdateDetails)
     _onPressEnd(Message) | _onPressCancel() | _finishMove() | _resetMove()
+      // usa _ordered (mesma referência das sondas); converte índice da JANELA
+      // para o índice GLOBAL em _finishMove
     _startAutoScroll() | _stopAutoScroll() | _autoScrollTick()
     _showUndoSnack(String, int) | _buildMoveOverlay(List<Message>, Map<String,Tag>)
   Menu/busca (RF05):
@@ -322,6 +376,8 @@ class AttachmentService
     _openSearchMenu()         // SearchRequest? -> goToDate / wordInConversation /
                               //   resultsList / dateRange
     _searchByDate()
+    _loadAllMessages()        // Sprint 6: aguarda messagesStreamProvider.future
+                              // (elimina falso "ainda não tem mensagens")
     _startWordSearch(String) | _closeWordSearch()
     _totalOccurrences | _currentOccurrenceFlat
     _goToCurrentOccurrence() | _nextOccurrence() | _previousOccurrence()
@@ -329,11 +385,15 @@ class AttachmentService
     _openResultsList(MessageFilter) | _openDateRangeResults()
   Ações de mensagem:
     _editMessage(Message) | _editDate(Message) | _openTagPicker(Message)
-    _openDetails(Message, int position, int total, Tag?) | _deleteMessage(Message)
-    _showMessageActions(Message)   // bottom sheet
+    _openDetails(Message, int position, int total, Tag?)  // posição REAL na conversa
+                                                          // (não na janela)
+    _deleteMessage(Message) | _showMessageActions(Message)
+  Ciclo de vida (Sprint 6 — RF08):
+    WidgetsBindingObserver: em paused/detached de conversa protegida descarta
+    conteúdo decifrado, invalida provider e, ao voltar, fecha até a Home.
   AppBars:
     PreferredSizeWidget _buildNormalAppBar(AsyncValue<Conversation?>)
-    PreferredSizeWidget _buildSearchAppBar()    // ← "q" + n de M + ▲ ▼
+    PreferredSizeWidget _buildSearchAppBar()    // ← "q" + n de M + ▲▼ ✕
   Gestos por item: Dismissible horizontal (startToEnd => tag picker;
     endToStart => detalhes; confirmDismiss sempre false),
     long-press = mover/menu, tap texto = editar.
@@ -349,14 +409,19 @@ class AttachmentService
   ConsumerStatefulWidget
     _filter (MessageFilter), _selecting, _selectedIds
     _rangeMode => _filter.from != null || _filter.to != null
+    // Sprint 6 (6.9 + correções)
+    _hits, _computing (inicia true), _hitsCache
+    _recomputeHits()          // cache por MessageFilter; não calcula sem dados
+    initState dispara _recomputeHits
     _exitSelection() | _toggleSelected(String)
-    _openFilters() -> showSearchFilterSheet(...)
-    _clearFilters() -> MessageFilter.empty
+    _openFilters() -> showSearchFilterSheet(...) (+ recalcula)
+    _clearFilters() -> MessageFilter.empty (+ recalcula)
     _pickTagForMany() -> showTagPickerManySheet + repo.setMessageTagMany
     _pickDateForMany() -> showDatePicker + repo.setMessageDateMany
     _deleteMany() -> confirmação + repo.deleteMessagesMany
-    build: messagesAsync.when -> searchMessages(messages, _filter)
-    _ResultTile: leading Checkbox (seleção) ou ícone do tipo; título/subtítulo
+    ref.listen em messagesStreamProvider invalida _hitsCache
+    build: usa _hits/_computing com spinner (não lê messagesAsync diretamente)
+    _ResultTile: leading Checkbox (se seleção) ou ícone do tipo; título/subtítulo
                  com highlightedText; data + TagChip + "N ocorrências"
     AppBar: normal (checklist se range, filtros, limpar) / seleção
             (N selecionadas + tag + data + excluir)
@@ -422,9 +487,10 @@ class AttachmentService
   Future<({String oldPassword, String newPassword})?> showPasswordChangeDialog(
       context, {required String conversationTitle})
 
-[widgets/lock_on_background.dart]  (Sprint 5 — OPCIONAL, NÃO ATIVO)
-  LockOnBackground({child}) — WidgetsBindingObserver; em `paused` chama repo.lockAll().
-  Para ativar: envolver home em app.dart. D2 atual = Home only, então NÃO usar.
+[widgets/lock_on_background.dart]  (Sprint 6 — ATIVO, Z1)
+  LockOnBackground({child}) — ConsumerStatefulWidget; WidgetsBindingObserver;
+  em `paused`/`detached` chama repo.lockAll().
+  Ativado em app.dart envolvendo LostCaptureGate/HomeScreen.
 
 [widgets/lost_capture_gate.dart]
   LostCaptureGate({child}) — recupera captura interrompida no app start.
@@ -443,7 +509,9 @@ class AttachmentService
   String shownText(Message m)
   List<SearchHit> searchMessages(List<Message>, MessageFilter)
   int? firstIndexOnDate(List<Message>, DateTime)
-  STATUS: ligada à UI (4.4/4.5/4.6).
+  STATUS: ligada à UI (4.4/4.5/4.6). Sprint 6: busca 100% em Dart sobre lista
+  cacheada (C); o SQL LIKE foi descartado (não ignora acentos — ver
+  SPRINT_6_CHANGES.md, decisão S1). Spinner na SearchResultsScreen (S5).
 
 [utils/text_normalize.dart]
   class MatchRange(start, end)
@@ -461,33 +529,42 @@ class AttachmentService
   hashKey estável
   constantTimeEquals
   AES-GCM ida-e-volta / nonces diferentes / chave errada falha / payload corrompido falha
+  (Sprint 6: 8/8 continuam passando com 155k iterações.)
 
 --------------------------------------------------------------------------------
 7. FLUXOS (quem chama quem)
 --------------------------------------------------------------------------------
 Enviar texto:   ChatScreen._onDraftChanged -> repo.saveDraft (debounce)
                 ChatScreen._send -> saveDraft -> sendDraft (cifra se protegida)
+                _send trata StateError sem perder o texto digitado
 Anexar:         _composer.onAttach -> _onAttachPressed -> showAttachmentPickerSheet
                 -> AttachmentService.* -> _sendPicked -> repo.sendAttachment
                 (cifra metadados se protegida)
 Tag:            swipe direita / "Definir tag" -> _openTagPicker -> showTagPickerSheet
                 -> repo.setMessageTag
 Detalhes:       swipe esquerda -> _openDetails -> showMessageDetailsSheet
-Reordenar:      long-press + arrasto >12px -> _onMoveUpdate -> _finishMove -> repo.reorderMessage
+                (posição REAL na conversa, não na janela)
+Reordenar:      long-press + arrasto >12px -> _onMoveUpdate -> _finishMove
+                -> repo.reorderMessage (O(1), position esparsa)
+Paginação:      ChatScreen._initPagination -> watchMessagesPaginated(limit: _windowLimit)
+                _onPositionsChanged -> _loadMore (+100) -> nova emissão substitui _ordered
 Busca palavra:  ⋮ -> showSearchOptionsSheet(wordInConversation) -> _startWordSearch
                 -> searchMessages -> SearchHighlight no balão; ▲/▼ navegam
 Lista (4.5):    ⋮ -> resultsList -> SearchResultsScreen
-                toque -> Navigator.pop(hit) -> _goToMessage
+                toque -> Navigator.pop(hit) -> _goToMessage (amplia janela, P5)
 Faixa (4.6):    ⋮ -> dateRange -> showDateRangePicker -> SearchResultsScreen
                 seleção -> setMessageTagMany / setMessageDateMany / deleteMessagesMany
 Proteger:       Home ⋮ -> Definir senha -> showPasswordSetupDialog
-                -> repo.protectConversation -> ref.invalidate(messages)
+                -> repo.protectConversation (deriveKeyInIsolate + batch)
+                -> ref.invalidate(messages)
 Desbloquear:    Home toque em conversa protegida
                 -> showUnlockDialog -> repo.verifyConversationPassword
-                (guarda chave) -> Navigator.push ChatScreen
+                (deriveKeyInIsolate; guarda chave) -> Navigator.push ChatScreen
 Trocar senha:   Home ⋮ -> showPasswordChangeDialog -> repo.changeConversationPassword
 Remover senha:  Home ⋮ -> showUnlockDialog -> repo.unprotectConversation
 Bloquear:       Chat ⋮ -> repo.lockConversation(convId) -> Navigator.pop
+Re-bloquear:    app minimizado (paused/detached) -> LockOnBackground -> repo.lockAll()
+                ChatScreen detecta e descarta conteúdo decifrado; ao voltar, Home pede senha
 Excluir conv.:  Home._deleteConversation -> repo.delete (+ pasta de mídia)
 Captura perdida: LostCaptureGate._recover (app start) <-> markPendingCapture
 
@@ -498,22 +575,25 @@ Captura perdida: LostCaptureGate._recover (app start) <-> markPendingCapture
    só por setMessageDateManually / setMessageDateMany (flag true) ou excluir+reenviar.
 2. Operações de tag e reorder NÃO alteram `atualizadoEm` da Conversa.
 3. saveDraft NÃO altera `atualizadoEm`; sendDraft/sendAttachment alteram.
-4. Ordem da conversa = `position` (não `data`). Lista da UI é reverse:true:
-   índice widget = total-1-índiceCronológico.
+4. Ordem da conversa = `position` (não `data`). `watchMessages` devolve ordem
+   CRONOLÓGICA. A UI usa lista invertida (`reverse: true`): índice widget =
+   total - 1 - índiceCronológico.
 5. 1 envio de texto = 1 Mensagem.
 6. Tag: no máx. 1 por mensagem; tag da mesma conversa; nome via
    TagRepository.normalizeName; excluir tag não exclui mensagens.
 7. BD guarda caminho RELATIVO; resolver sempre via MediaStorage.resolve.
 8. Excluir Conversa: mensagens -> tags -> conversa (FKs ligadas) + pasta media/<id>.
 9. Alterou tables.dart => subir schemaVersion, migrar, rodar build_runner.
+   (NÃO ocorreu nas Sprints 5 e 6; schema continua v4.)
 10. (Sprint 5) Conversa protegida: `conteudoTexto`/`arquivoNomeOriginal`/
     `arquivoNomeExibicao`/`arquivoMimeType` cifrados (base64). NÃO cifrados:
     id, conversationId, tagId, position, tipo, arquivoPath, arquivoTamanhoBytes,
     data, dataEditadaManualmente, Conversations.titulo.
-11. (Sprint 5) Chave (`_unlockedKeys`) só em memória. Fechar app limpa.
+11. (Sprint 5) Chave (`_unlockedKeys`) só em memória. Fechar app (ou minimizar,
+    com Z1) limpa.
 12. (Sprint 5) `watchMessages` decide entre "cru / decifra / placeholder"
     consultando `Conversations.protegidoPorSenha` — NUNCA assumir que
-    "sem chave" é "protegida" (bug corrigido no Bloco 3/4).
+    "sem chave" é "protegida".
 13. (Sprint 5) `protectConversation`/`unprotectConversation`/
     `changeConversationPassword` NÃO alteram `position`, `data`,
     `dataEditadaManualmente`, `tagId` nem `atualizadoEm` da conversa.
@@ -521,15 +601,33 @@ Captura perdida: LostCaptureGate._recover (app start) <-> markPendingCapture
     (sendDraft, sendAttachment, updateMessageContent, renameAttachment,
     replaceAttachmentFile). Se a conversa está protegida e a chave NÃO está na
     sessão, `_encodeForStorage` lança `StateError` (defesa em profundidade).
+15. (Sprint 6) `_plaintextCache` é invalidado em TODA escrita que toque nos
+    4 campos cifrados (13 métodos listados na seção 3); nunca vai para disco;
+    LRU de 2000 entradas.
+16. (Sprint 6) `LockOnBackground` ativo: minimizar o app (`paused`/`detached`)
+    chama `lockAll()`.
+17. (Sprint 6) `position` é ESPARSA (gaps de 1000). `reorderMessage` é O(1);
+    renumeração 0..N-1 só quando há colisão de gap.
+18. (Sprint 6) `ChatScreen` NÃO acumula páginas: usa UM stream de janela
+    (`watchMessagesPaginated` com limit crescente, offset 0). Cada emissão
+    substitui `_ordered`, refletindo edições/tags/datas/exclusões. `_totalCount`
+    vem de `watchMessageCount`.
+19. (Sprint 6) `messagesStreamProvider` devolve ordem CRONOLÓGICA (sem
+    `.reversed`). "Ir para data", ▲/▼ e ordem dos resultados dependem disso.
+20. (Sprint 6) Conversa protegida + app em background: `ChatScreen` descarta
+    o conteúdo decifrado e invalida o provider; ao voltar, fecha até a Home
+    (que pede a senha).
 
 --------------------------------------------------------------------------------
 9. PENDÊNCIAS E ALERTAS CONHECIDOS
 --------------------------------------------------------------------------------
-- Sprint 5: sem "esqueci a senha" (offline). Sem reset mágico.
+- Sprint 5/6: sem "esqueci a senha" (offline). Sem reset mágico.
 - Sprint 5: bytes de mídia em CLARO no filesystem (D7 aceito).
 - Sprint 5: título da conversa em CLARO (necessário para RF06.1).
-- Sprint 5: re-bloqueio em background NÃO ativado (D2 = Home only).
-  `LockOnBackground` existe mas NÃO é usado em app.dart.
+- Sprint 6: feedback visual nas operações de senha na Home foi CANCELADO
+  (decisão de UX) — só há SnackBar de conclusão/erro.
+- Sprint 6: busca por texto é O(n) em Dart (não há índice invertido). Em 10k
+  com cache quente, ~5 ms; em 100k, ~50 ms. FTS5 foi descartado (viola RF08).
 - Sprint 4: modo "Reordenar" pelo ⋮ é plano B ignorado.
 - Sprint 4: `MessageBubble.onLongPress` removido; o long-press é no GestureDetector
   da linha em chat_screen.dart.
@@ -539,4 +637,8 @@ Captura perdida: LostCaptureGate._recover (app start) <-> markPendingCapture
 - Herdadas Sprint 2: progresso real de cópia, varredura de órfãos em media/,
   player interno, seleção múltipla de anexos, remover line_diff_engine.dart.
 - `TagRibbon` é na prática a "faixa de metadados" (data + tag). Renomear é opcional.
-- `tagUsageCountsProvider` é global; TagsScreen
+- `tagUsageCountsProvider` é global (não escopado por conversa).
+- Documentação: `SPRINT_6_CHANGES.md` e `SPRINT_6_PLAN.md` são a referência
+  mais recente. Em caso de divergência com este mapa, vale o CHANGES.
+
+================================================================================
