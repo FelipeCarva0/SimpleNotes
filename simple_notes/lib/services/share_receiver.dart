@@ -28,15 +28,17 @@ class ShareReceiver {
   const ShareReceiver();
 
   Future<SharedPayload?> getInitialPayload() async {
-    try {
-      final items = await ReceiveSharingIntent.instance.getInitialMedia();
-      if (items.isEmpty) return null;
-      return _fromSharedMedia(items);
-    } catch (e) {
-      debugPrint('ShareReceiver.getInitialPayload: $e');
-      return null;
-    }
+  try {
+    final items = await ReceiveSharingIntent.instance.getInitialMedia();
+    if (items.isEmpty) return null;
+    final payload = _fromSharedMedia(items);
+    await ReceiveSharingIntent.instance.reset();
+    return payload;
+  } catch (e) {
+    debugPrint('ShareReceiver.getInitialPayload: $e');
+    return null;
   }
+}
 
   Stream<SharedPayload> get stream {
     return ReceiveSharingIntent.instance.getMediaStream().map(_fromSharedMedia);
