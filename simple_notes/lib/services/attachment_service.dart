@@ -43,10 +43,6 @@ class AttachmentService {
 
   String? _currentRecordingPath;
 
-  // ----------------------------------------------------------------
-  // Foto e vídeo
-  // ----------------------------------------------------------------
-
   Future<PickedAttachment?> takePhoto() async {
     try {
       final x = await _imagePicker.pickImage(source: ImageSource.camera);
@@ -82,13 +78,6 @@ class AttachmentService {
       throw _mapPickerError(e, 'galeria');
     }
   }
-
-  // ----------------------------------------------------------------
-  // Documento e áudio existente (file_picker)
-  // ----------------------------------------------------------------
-  // ----------------------------------------------------------------
-  // Sprint 7 (7.3) — múltiplas mídias de uma vez.
-  // ----------------------------------------------------------------
 
   /// Abre o picker nativo com fotos **e** vídeos juntos, permitindo
   /// seleção múltipla. O `MessageType` de cada item é inferido por
@@ -164,10 +153,6 @@ class AttachmentService {
       tipo: forceType ?? inferType(path),
     );
   }
-
-  // ----------------------------------------------------------------
-  // Gravador de áudio
-  // ----------------------------------------------------------------
 
   bool _recording = false;
   bool get isRecording => _recording;
@@ -254,9 +239,6 @@ class AttachmentService {
     }
   }
 
-  // ----------------------------------------------------------------
-  // Recuperação de captura perdida (Android pode matar o app durante a câmera)
-  // ----------------------------------------------------------------
 
   Future<File> _pendingFile() async {
     final dir = await getApplicationSupportDirectory();
@@ -300,9 +282,7 @@ class AttachmentService {
         : _fromXFile(x, MessageType.imagem, prefix: 'Foto');
   }
 
-  // ----------------------------------------------------------------
-  // Utilitários
-  // ----------------------------------------------------------------
+
 
   /// Infere o [MessageType] pelo MIME; tudo que não for imagem/vídeo/áudio
   /// vira `documento`.

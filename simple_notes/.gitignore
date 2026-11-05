@@ -43,3 +43,15 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Builds de qualquer módulo
+**/build/
+android/.gradle/
+android/local.properties
+*.apk
+*.aab
+
+# Chaves
+*.jks
+*.keystore
+android/key.properties

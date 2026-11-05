@@ -210,10 +210,6 @@ Future<void> _openFile(BuildContext context, File file) async {
   }
 }
 
-// ---------------------------------------------------------------------
-// Estado de arquivo ausente
-// ---------------------------------------------------------------------
-
 class _MissingFile extends StatelessWidget {
   const _MissingFile();
 
@@ -332,10 +328,6 @@ class _ImageContentState extends ConsumerState<_ImageContent> {
     );
   }
 }
-
-// ---------------------------------------------------------------------
-// Vídeo (thumbnail em disco)
-// ---------------------------------------------------------------------
 
 class _VideoContent extends ConsumerStatefulWidget {
   final Message message;
@@ -494,10 +486,6 @@ class _Chip extends StatelessWidget {
     );
   }
 }
-
-// ---------------------------------------------------------------------
-// Cartão de arquivo (áudio e documento)
-// ---------------------------------------------------------------------
 
 class _FileCard extends ConsumerStatefulWidget {
   final Message message;

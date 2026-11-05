@@ -54,8 +54,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   static const double _previewHeight = 48;
   final _listAreaKey = GlobalKey();
   final Set<_ItemProbeState> _probes = {};
-
-  // Modo mover (A4.2)
   bool _moveActive = false;
   String? _moveId;
   final ValueNotifier<_MoveVisual?> _move = ValueNotifier(null);
@@ -63,20 +61,33 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   Timer? _autoScrollTimer;
   Offset? _lastPointer;
   int? _lastDropIndex;
-
-  // Busca por palavra (4.4)
   bool _searchActive = false;
   String _searchQuery = '';
   List<SearchHit> _hits = const [];
   int _currentHit = 0; // índice em _hits
   int _currentOccurrence = 0; // índice em _hits[_currentHit].matches
-
-  // ---------------------------------------------------------------------
-  // Sprint 7 (7.2a) — modo seleção
-  // ---------------------------------------------------------------------
   bool _selecting = false;
   final Set<String> _selectedIds = {};
   String? _anchorId;
+    bool _draftLoaded = false;
+  bool _sendingAttachment = false;
+  int _batchTotal = 0;
+  int _batchSent = 0;
+  bool _batchCancelled = false;
+  static const int _pageSize = 100;
+  final List<Message> _ordered = [];
+  final Set<String> _ids = {};
+  int _limit = _pageSize;
+  int _totalCount = 0;
+  bool _preloading = false;
+  bool _disposed = false;
+  bool _paginationReady = false;
+  Completer<void>? _pageSignal;
+  StreamSubscription<List<Message>>? _pageSub;
+  StreamSubscription<int>? _countSub;
+  bool _protected = false; 
+  bool _locked = false;
+  final _positionsListener = ItemPositionsListener.create();
 
   void _enterSelection(Message message) {
     if (_selecting) return;
@@ -84,7 +95,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       _selecting = true;
       _selectedIds.add(message.id);
       _anchorId = message.id;
-      // Fecha a busca por palavra: são mutuamente exclusivas.
       _searchActive = false;
       _searchQuery = '';
       _hits = const [];
@@ -111,39 +121,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         _selectedIds.add(id);
       }
       if (_selectedIds.isEmpty) {
-        // Sem nenhuma selecionada: sai do modo, como em apps de mensagem.
         _selecting = false;
         _anchorId = null;
       }
     });
   }
 
-  // Só ficamos true depois de carregar o rascunho já salvo no banco; evita
-  // que o dispose() sobrescreva um rascunho existente com string vazia caso
-  // o usuário saia da tela antes do carregamento inicial terminar.
-  bool _draftLoaded = false;
-  bool _sendingAttachment = false;
-  int _batchTotal = 0;
-  int _batchSent = 0;
-  bool _batchCancelled = false;
-  // ---------------------------------------------------------------------
-  // Sprint 6 — paginação + preload
-  // ---------------------------------------------------------------------
-  static const int _pageSize = 100;
-  final List<Message> _ordered = []; // ordem crescente (mais antigas primeiro)
-  final Set<String> _ids = {};
-  int _limit = _pageSize; // janela atual: as _limit mais recentes
-  int _totalCount = 0;
-  bool _preloading = false; // true enquanto uma janela maior carrega
-  bool _disposed = false;
-  bool _paginationReady = false;
-  Completer<void>? _pageSignal; // completa na próxima emissão do stream
-  StreamSubscription<List<Message>>? _pageSub;
-  StreamSubscription<int>? _countSub;
-  bool _protected = false; // conversa tem senha (não muda com a tela aberta)
-  bool _locked = false; // app foi para segundo plano: conteúdo descartado
-  final _positionsListener = ItemPositionsListener.create();
-  @override
   @override
   void initState() {
     super.initState();
@@ -208,10 +191,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       _draftLoaded = true;
     });
   }
-
-  // ---------------------------------------------------------------------
-  // Sprint 6 — paginação + preload
-  // ---------------------------------------------------------------------
 
   Future<void> _initPagination() async {
     if (!mounted || _disposed) return;
@@ -472,9 +451,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       if (mounted) setState(() => _sendingAttachment = false);
     }
   }
-  // ---------------------------------------------------------------------
-  // Sprint 7 (7.3) — importação em lote (S7-11).
-  // ---------------------------------------------------------------------
 
   /// Envia N anexos escolhidos de uma vez, em **lotes de 10** via
   /// [ConversationRepository.appendMessages] (7.1a). Cada lote é atômico;
@@ -648,9 +624,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     );
     _flashHighlight(messageId);
   }
-  // ---------------------------------------------------------------------
-  // Reordenar: segurar e mover (A4.2)
-  // ---------------------------------------------------------------------
 
   /// Posições na tela (globais) das linhas atualmente montadas, por índice
   /// cronológico.
@@ -800,9 +773,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     });
   }
 
-  // ---------------------------------------------------------------------
-  // Rolagem automática e desfazer (A4.3)
-  // ---------------------------------------------------------------------
 
   void _startAutoScroll() {
     _autoScrollTimer?.cancel();
@@ -1111,9 +1081,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     // ampla" acima já deram `return` antes, mantendo o modo.
     if (mounted) _exitSelection();
   }
-  // ---------------------------------------------------------------------
-  // Sprint 7 (7.2b) — cópia e seleção ampla.
-  // ---------------------------------------------------------------------
+
 
   /// Copia o **texto** das mensagens de texto selecionadas, em ordem de
   /// `position`, separadas por linha em branco. Mídia é ignorada com
@@ -1569,9 +1537,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     );
   }
 
-  // ---------------------------------------------------------------------
-  // Busca por palavra na conversa (4.4)
-  // ---------------------------------------------------------------------
 
   Future<void> _startWordSearch(String query) async {
     final trimmed = query.trim();
@@ -1695,9 +1660,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       originalNameOnly: hit.matches.isEmpty,
     );
   }
-  // ---------------------------------------------------------------------
-  // Lista de resultados (4.5) e faixa de datas com lote (4.6)
-  // ---------------------------------------------------------------------
+
 
   Future<void> _openResultsList(MessageFilter filter) async {
     final messages = await _loadAllMessages();

@@ -151,9 +151,6 @@ class _SearchOptionsSheetState extends State<_SearchOptionsSheet> {
   }
 }
 
-// ---------------------------------------------------------------------
-// Sheet de edição de filtros (4.5 completo)
-// ---------------------------------------------------------------------
 
 /// Abre o sheet para editar [filter] (texto, tipos, tags e faixa de datas).
 /// Devolve o [MessageFilter] atualizado, ou null se fechado sem salvar.

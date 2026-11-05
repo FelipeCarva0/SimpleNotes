@@ -143,9 +143,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     await ref.read(conversationRepositoryProvider).delete(id);
   }
 
-  // ---------------------------------------------------------------------
-  // RF08 — proteção por senha (Sprint 5)
-  // ---------------------------------------------------------------------
+
 
   /// Abre a conversa; se estiver protegida e ainda não desbloqueada nesta
   /// sessão, pede a senha antes.

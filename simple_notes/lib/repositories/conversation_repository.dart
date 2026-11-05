@@ -10,11 +10,6 @@ import '../security/password_crypto.dart';
 import 'new_message.dart';
 import 'tag_repository.dart'; // ← ADICIONAR
 
-/// Cobre o CRUD de Conversa (RF01, Sprint 0) e, a partir da Sprint 1, as
-/// operações sobre Mensagem de texto (RF02, RF03). Anexos de arquivo
-/// (RF02.3) entram na Sprint 2 e a associação com Tag (RF04) na Sprint 3 —
-/// ambas reaproveitando esta mesma instância de [AppDatabase].
-
 class _DecryptedFields {
   final String? conteudoTexto;
   final String? arquivoNomeOriginal;
@@ -56,10 +51,6 @@ class ConversationRepository {
   }
 
   ConversationRepository(this.db, this.storage);
-
-  // ---------------------------------------------------------------------
-  // Conversa (RF01) — inalterado desde a Sprint 0
-  // ---------------------------------------------------------------------
 
   Stream<List<Conversation>> watchAll() {
     final query = db.select(db.conversations)
@@ -104,10 +95,7 @@ class ConversationRepository {
     );
   }
 
-  /// RF05 — busca por texto em conversa NÃO protegida, direto no SQL.
-  /// Retorna os ids que casam (LIKE, case-insensitive no ASCII; para acentos
-  /// exatos, normalizamos o termo antes de chamar). Se a conversa for
-  /// protegida, retorna `null` (o chamador decide decifrar em memória).
+  
   Future<List<Message>?> searchMessagesByText(
     String conversationId,
     String query,
@@ -153,10 +141,7 @@ class ConversationRepository {
     rascunho: row.rascunho,
   );
 
-  // ---------------------------------------------------------------------
-  // Mensagem — texto (RF02, RF03) — Sprint 1
-  // ---------------------------------------------------------------------
-
+  
   /// RF06 (chat) — todas as Mensagens de uma Conversa, na ordem de envio
   /// (`position`). Note que isso NÃO é necessariamente a ordem por `data`:
   /// a data pode ser sobrescrita manualmente (RF02.6) e ficar "fora de
@@ -180,10 +165,6 @@ class ConversationRepository {
       return _decryptRows(rows, true, key);
     });
   }
-
-  // ---------------------------------------------------------------------
-  // Sprint 6 — paginação e contagem
-  // ---------------------------------------------------------------------
 
   /// Página "de chat": devolve as [limit] mensagens MAIS RECENTES
   /// (maior `position`) começando a [offset] mensagens do fim. A ordem
@@ -253,12 +234,7 @@ class ConversationRepository {
     return row?.protegidoPorSenha ?? false;
   }
 
-  /// Aplica decifragem (ou placeholder) às linhas conforme o estado da
-  /// conversa e da sessão.
-  ///
-  /// - Conversa **não protegida** → texto cru (sem decifrar).
-  /// - Protegida + chave em sessão → decifra cada campo, em paralelo.
-  /// - Protegida + sem chave → placeholders (`'••••••'` / `'••••'`).
+  
   Future<List<Message>> _decryptRows(
     List<MessageRow> rows,
     bool isProtected,
@@ -329,9 +305,7 @@ class ConversationRepository {
     );
   }
 
-  /// Versão "crua" da linha, com placeholders nos campos sensíveis. Usada
-  /// quando a conversa é protegida e a chave não está na sessão (raro: só
-  /// acontece se a `ChatScreen` for aberta sem passar pelo gate da Home).
+
   Message _withPlaceholders(MessageRow row) => _messageToModel(
     row,
     overrides: (
@@ -490,10 +464,6 @@ class ConversationRepository {
     dataEditadaManualmente: row.dataEditadaManualmente,
   );
 
-  // ---------------------------------------------------------------------
-  // Mensagem — anexos (RF02.3, RF02.4, RF02.5) — Sprint 2
-  // ---------------------------------------------------------------------
-
   /// RF02.3 — copia o arquivo para o storage e cria uma Mensagem de anexo
   /// com a data de hoje. Se o banco falhar, remove o arquivo copiado para
   /// não deixar órfão.
@@ -555,10 +525,7 @@ class ConversationRepository {
     }
   }
 
-  // ---------------------------------------------------------------------
-  // Mensagem — inserção em lote (Sprint 7 — 7.1a)
-  // ---------------------------------------------------------------------
-
+  
   /// Sprint 7 (7.1a) — insere N mensagens de uma vez, em **duas fases**:
   ///
   /// **Fase 1 (fora da transação):** copia arquivos para o storage e cifra
@@ -774,9 +741,7 @@ class ConversationRepository {
     return createdIds;
   }
 
-  // ---------------------------------------------------------------------
-  // Sprint 7 (7.4) — encaminhar mensagens entre conversas.
-  // ---------------------------------------------------------------------
+
 
   /// Encaminha as mensagens de [messageIds] (todas da mesma origem) para
   /// [destinationConversationId]. Cada mensagem gera um **novo** `id` e um
@@ -937,9 +902,7 @@ class ConversationRepository {
       total: source.length,
     );
   }
-  // ---------------------------------------------------------------------
-  // Mensagem — leitura por ids (Sprint 7 — 7.1b)
-  // ---------------------------------------------------------------------
+
 
   /// Sprint 7 (7.1b) — devolve as [Message] dos [ids] informados, **já
   /// decifradas**, ordenadas por `position` (não pela ordem de [ids]).
@@ -1076,10 +1039,6 @@ class ConversationRepository {
     if (oldPath != null) await storage.delete(oldPath);
   }
 
-  // ---------------------------------------------------------------------
-  // Mensagem — tag (RF04) — Sprint 3
-  // ---------------------------------------------------------------------
-
   /// RF04 — define, substitui ou remove (tagId == null) a Tag de uma
   /// Mensagem. Cada Mensagem tem no máximo uma Tag.
   ///
@@ -1108,9 +1067,6 @@ class ConversationRepository {
     );
   }
 
-  // ---------------------------------------------------------------------
-  // Mensagem — reordenação — Sprint 4 (A4)
-  // ---------------------------------------------------------------------
 
   /// Sprint 6: reordenar em conversa grande passa a ser **O(1)** no caso
   /// comum. A `position` vira uma chave esparsa (gaps de 1000); mover
@@ -1184,9 +1140,6 @@ class ConversationRepository {
       return oldIndex;
     });
   }
-  // ---------------------------------------------------------------------
-  // Ações em lote sobre resultados de busca — Sprint 4 (4.6)
-  // ---------------------------------------------------------------------
 
   /// Define (ou remove, com [tagId] == null) a Tag de várias Mensagens de
   /// uma vez. Valida que a Tag existe e pertence à mesma conversa da
@@ -1308,9 +1261,6 @@ class ConversationRepository {
     }
   }
 
-  // ---------------------------------------------------------------------
-  // RF08 — senha e criptografia de metadados por Conversa — Sprint 5
-  // ---------------------------------------------------------------------
 
   /// Ativa a proteção por senha: gera salt, deriva a chave, **cifra** os
   /// campos sensíveis de todas as mensagens da conversa e grava
@@ -1653,9 +1603,7 @@ class ConversationRepository {
     _unlockedKeys[id] = key;
     return key;
   }
-  // ---------------------------------------------------------------------
-  // Helper: cifra campos de uma mensagem quando a conversa está protegida
-  // ---------------------------------------------------------------------
+
 
   /// Devolve o valor a ser gravado em [field], conforme o estado da conversa:
   /// - Conversa **não protegida** → devolve [plaintext] como está.

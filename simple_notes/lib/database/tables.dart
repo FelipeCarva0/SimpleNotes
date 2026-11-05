@@ -23,7 +23,8 @@ class Conversations extends Table {
   DateTimeColumn get criadoEm => dateTime()();
   DateTimeColumn get atualizadoEm => dateTime()();
 
-  /// RF08 — trava apenas o acesso à Conversa inteira (bloqueio/desbloqueio),
+  /// RF08 — trava o acesso à Conversa inteira (bloqueio/desbloqueio)
+  /// Cifra dados de texto,
   /// sem distinção de cifragem por tipo de conteúdo.
   BoolColumn get protegidoPorSenha =>
       boolean().withDefault(const Constant(false))();
@@ -37,7 +38,7 @@ class Conversations extends Table {
   Set<Column> get primaryKey => {id};
 }
 
-/// RF02/RF03 — Mensagem (antiga Linha, generalizada para texto ou arquivo).
+/// RF02/RF03 — Mensagem
 /// Os campos `arquivo*` só são preenchidos quando `tipo != texto`.
 @DataClassName('MessageRow')
 class Messages extends Table {
