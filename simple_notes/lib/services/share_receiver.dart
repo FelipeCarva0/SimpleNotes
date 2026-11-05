@@ -32,6 +32,8 @@ class ShareReceiver {
     final items = await ReceiveSharingIntent.instance.getInitialMedia();
     if (items.isEmpty) return null;
     final payload = _fromSharedMedia(items);
+    // Impede que o mesmo compartilhamento frio seja entregue novamente na
+    // próxima leitura do plugin após a navegação do app.
     await ReceiveSharingIntent.instance.reset();
     return payload;
   } catch (e) {
@@ -57,6 +59,8 @@ class ShareReceiver {
     String? text;
     final files = <File>[];
     for (final m in items) {
+      // Textos e URLs são preservados como texto da mensagem; o modelo não
+      // cria um tipo de anexo separado para links recebidos.
       if (m.type == SharedMediaType.text) {
         final t = m.path.trim();
         if (t.isNotEmpty) text = (text == null) ? t : '$text\n$t';

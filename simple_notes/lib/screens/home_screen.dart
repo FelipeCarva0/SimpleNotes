@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/conversation.dart';
 import '../providers/conversation_providers.dart';
+import '../providers/security_providers.dart';
+import '../security/unlock_flow.dart';
 import '../utils/text_normalize.dart';
 import 'chat_screen.dart';
 import '../widgets/password_change_dialog.dart';
@@ -10,6 +12,10 @@ import '../widgets/unlock_dialog.dart';
 
 /// RF06 — tela inicial: lista de todas as Conversas, com busca por título
 /// (RF06.1) e o CRUD de Conversa (RF01).
+///
+/// Sprint 8: abertura de conversa protegida passa pelo `runUnlockFlow`,
+/// que decide entre biometria e senha automaticamente (biometria primeiro
+/// se houver enrolamento). Menu ⋮ ganhou "Biometria" (ativar/desativar).
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
@@ -21,7 +27,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   final _searchController = TextEditingController();
   bool _searching = false;
   String _query = '';
-  
+
+  /// Anti-reentrância do handler "Biometria" (não deixa abrir dois
+  /// diálogos do menu em sequência antes do primeiro fechar).
+  bool _biometricBusy = false;
 
   @override
   void dispose() {
@@ -143,34 +152,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     await ref.read(conversationRepositoryProvider).delete(id);
   }
 
-
-
-  /// Abre a conversa; se estiver protegida e ainda não desbloqueada nesta
-  /// sessão, pede a senha antes.
+  /// Abertura de conversa. Sprint 8: usa `runUnlockFlow` (biometria
+  /// primeiro se houver enrolamento; senha como fallback).
   Future<void> _openConversation(Conversation conversation) async {
     final repo = ref.read(conversationRepositoryProvider);
 
     if (conversation.protegidoPorSenha && !repo.isUnlocked(conversation.id)) {
-      final password = await showUnlockDialog(
-        context,
+      final bio = ref.read(biometricUnlockProvider);
+      final outcome = await runUnlockFlow(
+        context: context,
+        conversationId: conversation.id,
         conversationTitle: conversation.titulo,
+        repo: repo,
+        bio: bio,
       );
-      if (password == null || !mounted) return;
-
-      final key = await repo.verifyConversationPassword(
-        conversation.id,
-        password,
-      );
-
       if (!mounted) return;
-
-      if (key == null) {
-        _showSnack('Senha incorreta.');
-        return;
+      if (outcome != UnlockOutcome.unlockedByBiometric &&
+          outcome != UnlockOutcome.unlockedByPassword) {
+        return; // cancelado (já avisado quando necessário)
       }
-
-      // A chave foi guardada no repositório. Invalida o stream de mensagens
-      // para que a ChatScreen receba já decifrado quando abrir.
+      // Chave já está na sessão; invalida o stream para a ChatScreen
+      // receber decifrado.
       ref.invalidate(messagesStreamProvider(conversation.id));
     }
 
@@ -200,8 +202,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     } catch (e) {
       debugPrint('Erro ao proteger conversa: $e');
       _showSnack('Não foi possível proteger a conversa.');
-    } finally {
-
     }
   }
 
@@ -228,24 +228,31 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     } catch (e) {
       debugPrint('Erro ao trocar senha: $e');
       _showSnack('Não foi possível trocar a senha.');
-    } finally {
-
     }
   }
 
   Future<void> _unprotectConversation(Conversation conversation) async {
     // Pede a senha atual para confirmar (e para o repositório ter a chave
     // ao decifrar tudo de volta).
-    final password = await showUnlockDialog(
+    final result = await showPasswordUnlockDialog(
       context,
       conversationTitle: conversation.titulo,
+      hasBiometricEnrollment: false,
+      biometricAvailable: false,
+      allowSetupBiometric: false,
     );
-    if (password == null || !mounted) return;
+    if (!mounted) return;
+    if (result is! PasswordUnlockResultPassword) return;
+    final password = result.password;
 
     final repo = ref.read(conversationRepositoryProvider);
 
     try {
       await repo.unprotectConversation(conversation.id, password);
+      if (!mounted) return;
+      // Ao remover a proteção, o enrolamento biométrico perde sentido
+      // (a chave não tem mais como ser usada). Limpamos.
+      await ref.read(biometricUnlockProvider).disable(conversation.id);
       if (!mounted) return;
       ref.invalidate(messagesStreamProvider(conversation.id));
       _showSnack('Proteção removida.');
@@ -254,8 +261,91 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     } catch (e) {
       debugPrint('Erro ao remover proteção: $e');
       _showSnack('Não foi possível remover a proteção.');
-    } finally {
+    }
+  }
 
+  /// Sprint 8 — ativar/desativar biometria a partir do menu ⋮.
+  /// Se a chave ainda não está na sessão, abre o fluxo de desbloqueio
+  /// (com `manageBiometrics`: permite biometria se já existe, esconde o
+  /// link "Configurar biometria" no rodapé).
+  Future<void> _onBiometricPressed(Conversation conversation) async {
+    if (_biometricBusy) return;
+    _biometricBusy = true;
+    try {
+      final repo = ref.read(conversationRepositoryProvider);
+      final bio = ref.read(biometricUnlockProvider);
+
+      if (!await bio.isAvailable()) {
+        if (!mounted) return;
+        _showSnack('Biometria não disponível neste aparelho.');
+        return;
+      }
+
+      // Garante que a chave está na sessão (senão o enable não pode ser
+      // feito, e o isUnlocked dos outros fluxos fica inconsistente).
+      var key = repo.unlockedKeyOrNull(conversation.id);
+      if (key == null) {
+        if (!mounted) return;
+        final outcome = await runUnlockFlow(
+          context: context,
+          conversationId: conversation.id,
+          conversationTitle: conversation.titulo,
+          repo: repo,
+          bio: bio,
+          purpose: UnlockPurpose.manageBiometrics,
+        );
+        if (!mounted) return;
+        if (outcome != UnlockOutcome.unlockedByBiometric &&
+            outcome != UnlockOutcome.unlockedByPassword) {
+          return;
+        }
+        key = repo.unlockedKeyOrNull(conversation.id);
+        if (key == null) return; // defensivo
+      }
+
+      final enrolled = await bio.hasEnrollment(conversation.id);
+      if (!mounted) return;
+
+      if (enrolled) {
+        final confirm = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Desativar biometria?'),
+            content: const Text(
+              'A senha continuará funcionando para abrir esta conversa.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Desativar'),
+              ),
+            ],
+          ),
+        );
+        if (confirm != true || !mounted) return;
+        await bio.disable(conversation.id);
+        if (!mounted) return;
+        _showSnack('Biometria desativada.');
+        return;
+      }
+
+      // Ativar.
+      final ok = await bio.enable(
+        conversationId: conversation.id,
+        key: key,
+      );
+      if (!mounted) return;
+      _showSnack(
+        ok
+            ? 'Biometria ativada. Você pode desbloquear esta conversa com a digital.'
+            : 'Biometria não ativada.',
+      );
+    } finally {
+      _biometricBusy = false;
     }
   }
 
@@ -345,6 +435,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       onProtect: _protectConversation,
                       onChangePassword: _changeConversationPassword,
                       onUnprotect: _unprotectConversation,
+                      onBiometric: _onBiometricPressed,
                     );
                   },
                 );
@@ -358,7 +449,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     child: const Icon(Icons.add),
                   ),
           ),
-
         ],
       ),
     );
@@ -373,6 +463,7 @@ class _ConversationTile extends StatelessWidget {
   final Future<void> Function(Conversation) onProtect;
   final Future<void> Function(Conversation) onChangePassword;
   final Future<void> Function(Conversation) onUnprotect;
+  final Future<void> Function(Conversation) onBiometric;
 
   const _ConversationTile({
     required this.conversation,
@@ -382,6 +473,7 @@ class _ConversationTile extends StatelessWidget {
     required this.onProtect,
     required this.onChangePassword,
     required this.onUnprotect,
+    required this.onBiometric,
   });
 
   @override
@@ -403,7 +495,12 @@ class _ConversationTile extends StatelessWidget {
             case 'protect':
               onProtect(conversation);
             case 'change':
+              // BUGFIX Sprint 8: este case estava vazio e caía no
+              // 'biometric' por fall-through implícito. Cada case agora
+              // tem seu próprio bloco.
               onChangePassword(conversation);
+            case 'biometric':
+              onBiometric(conversation);
             case 'unprotect':
               onUnprotect(conversation);
           }
@@ -418,6 +515,7 @@ class _ConversationTile extends StatelessWidget {
               value: 'unprotect',
               child: Text('Remover senha'),
             ),
+            const PopupMenuItem(value: 'biometric', child: Text('Biometria')),
           ],
           const PopupMenuItem(value: 'delete', child: Text('Excluir')),
         ],

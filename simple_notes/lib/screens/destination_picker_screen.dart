@@ -2,21 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/conversation.dart';
 import '../providers/conversation_providers.dart';
+import '../providers/security_providers.dart';
+import '../security/unlock_flow.dart';
 import '../utils/text_normalize.dart';
-import '../widgets/unlock_dialog.dart';
-
 
 /// Sprint 7 (7.4) — escolha da Conversa de destino para encaminhar (e,
 /// no bloco 7.6, para receber compartilhamento externo).
 ///
-/// Reutilizável: devolve o `conversationId` escolhido, ou `null` se o
-/// usuário cancelar. A conversa de origem (quando informada em
-/// [disabledConversationId]) aparece desabilitada.
-///
-/// Não verifica chave de conversa protegida aqui — se o usuário escolher
-/// uma protegida que não esteja na sessão, abre o `showUnlockDialog` e,
-/// se destravar, devolve o id. Se cancelar o desbloqueio, **não** devolve
-/// o id (volta para a lista).
+/// Sprint 8: a desbloqueio de destino protegido passa pelo
+/// `runUnlockFlow` (biometria primeiro se houver). Sem diálogo próprio
+/// de senha.
 class DestinationPickerScreen extends ConsumerStatefulWidget {
   /// Conversa que NÃO deve ser escolhida (normalmente a de origem).
   final String? disabledConversationId;
@@ -43,6 +38,7 @@ class _DestinationPickerScreenState
     extends ConsumerState<DestinationPickerScreen> {
   final _searchController = TextEditingController();
   String _query = '';
+  bool _picking = false;
 
   @override
   void dispose() {
@@ -89,31 +85,34 @@ class _DestinationPickerScreenState
   }
 
   Future<void> _pick(Conversation conversation) async {
-    final repo = ref.read(conversationRepositoryProvider);
+    if (_picking) return;
+    _picking = true;
+    try {
+      final repo = ref.read(conversationRepositoryProvider);
+      final bio = ref.read(biometricUnlockProvider);
 
-    if (conversation.protegidoPorSenha &&
-        !repo.isUnlocked(conversation.id)) {
-      final password = await showUnlockDialog(
-        context,
-        conversationTitle: conversation.titulo,
-      );
-      if (password == null || !mounted) return;
-
-      final key = await repo.verifyConversationPassword(
-        conversation.id,
-        password,
-      );
-      if (!mounted) return;
-      if (key == null) {
-        ScaffoldMessenger.of(context)
-          ..hideCurrentSnackBar()
-          ..showSnackBar(const SnackBar(content: Text('Senha incorreta.')));
-        return;
+      if (conversation.protegidoPorSenha &&
+          !repo.isUnlocked(conversation.id)) {
+        final outcome = await runUnlockFlow(
+          context: context,
+          conversationId: conversation.id,
+          conversationTitle: conversation.titulo,
+          repo: repo,
+          bio: bio,
+        );
+        if (!mounted) return;
+        if (outcome != UnlockOutcome.unlockedByBiometric &&
+            outcome != UnlockOutcome.unlockedByPassword) {
+          return; // cancelado ou senha errada (já avisado)
+        }
+        ref.invalidate(messagesStreamProvider(conversation.id));
       }
-    }
 
-    if (!mounted) return;
-    Navigator.pop(context, conversation.id);
+      if (!mounted) return;
+      Navigator.pop(context, conversation.id);
+    } finally {
+      _picking = false;
+    }
   }
 
   @override
@@ -224,11 +223,7 @@ class _DestinationPickerScreenState
 }
 
 /// Sprint 7 (7.4) — opções de encaminhamento.
-///
-/// - [keepOriginalDate] → mantém `data`/`dataEditadaManualmente` da
-///   origem. Default: `false` (usa hoje).
-/// - [carryTag] → recria a tag da origem no destino (por nome + cor).
-///   Default: `false`.
+/// (Mantido sem alteração na Sprint 8.)
 class ForwardOptions {
   final bool keepOriginalDate;
   final bool carryTag;

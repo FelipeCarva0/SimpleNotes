@@ -31,6 +31,18 @@
 > de mídia ou de uma share sheet, mantendo o re-bloqueio normal quando o app
 > fica em segundo plano "parado".
 
+
+> **Nota de versão (5.2 → 5.3) — Sprint 8 entregue:** a proteção por senha
+> de uma Conversa (RF08) ganha uma **segunda porta**: biometria do
+> aparelho. A Conversa passa a poder ser protegida por senha **e/ou**
+> biometria, bastando **uma** correta para liberar o acesso. Ativar a
+> biometria exige a senha (a chave derivada é guardada em
+> `flutter_secure_storage`, protegida pelo Keystore). A senha continua
+> funcionando em qualquer cenário. **Nenhuma alteração de schema**
+> (continua v4); a chave enrolada é guardada fora do banco. Foram
+> acrescentados os invariantes 29–31 (ver "Modelo de dados"). O app de
+> release continua **sem** `INTERNET` (RNF01 / invariante 27), agora com
+> `USE_BIOMETRIC` no manifest.
 ---
 
 ## Visão geral
@@ -194,6 +206,16 @@ expõe os textos e nomes de arquivo em claro fora do controle de cifra do
 Arquivo. O app **avisa explicitamente o usuário** antes de prosseguir
 (rebaixamento de segurança). As mídias continuam em claro no filesystem
 (D7); o aviso cobre o rebaixamento de metadados que estavam cifrados.
+**Novo em 5.3 — Biometria:** além da senha, a Conversa pode ser liberada
+pela biometria do aparelho. Ativar a biometria exige a senha na sessão
+(prova de posse) e grava a chave derivada em armazenamento seguro do
+sistema, protegido pelo Keystore. A biometria **não substitui** a senha:
+é uma porta **adicional**. Abrir a Conversa protegida com biometria ativa
+dispara o sensor nativo **automaticamente** (sem tela intermediária de
+escolha); o usuário pode optar por "Usar senha" a qualquer momento.
+Desativar a biometria só remove o cofre paralelo; não toca em
+`senhaHash`/`salt`/`protegidoPorSenha`. Remover a senha remove **também**
+o enrolamento biométrico (a chave perde sentido).
 
 ### RF09 (novo em 5.2) — Seleção de mensagens
 O usuário pode entrar em **modo de seleção** dentro de uma Conversa:
@@ -429,6 +451,16 @@ seguintes (numeração contínua):
 28. Excluir uma Conversa **não afeta** mensagens encaminhadas para outras
     Conversas (cópia física independente, invariante 15).
 
+    29. Ativar biometria exige a chave na sessão (`unlockedKeyOrNull`);
+    nunca guarda a chave sem que o usuário tenha provado a senha nesta
+    execução.
+30. Senha e biometria são portas **independentes**; remover uma não
+    invalida a outra. `unprotectConversation` remove **também** o
+    enrolamento biométrico (a chave perde sentido).
+31. Desativar biometria = `BiometricUnlock.disable` (só apaga o cofre
+    paralelo); não toca em `senhaHash`/`salt`/`protegidoPorSenha` nem
+    recifra nada.
+
 ---
 
 ## Metodologia de desenvolvimento
@@ -443,6 +475,12 @@ seguintes (numeração contínua):
 | 5 — Criptografia | Senha de acesso por Conversa (bloqueio/desbloqueio da Conversa inteira) |
 | 6 — Polimento | Performance com mídia pesada, robustez offline, paginação, `position` esparsa, cache de plaintext, re-bloqueio em background (Z1) |
 | 7 — Seleção, múltiplas mídias e compartilhamento | Seleção de mensagens na Conversa com ações em lote; importação de múltiplas mídias; encaminhar; compartilhar para outros apps; receber compartilhamento; `AppLockShield` |
+| 8 — Biometria | Segunda porta de desbloqueio: biometria do aparelho
+  como alternativa à senha, com `runUnlockFlow` unificando os fluxos
+  (biometria primeiro quando há enrolamento); migração de
+  `showUnlockDialog` → `showPasswordUnlockDialog` + `PasswordUnlockResult`
+  (sealed); bugfix do `switch` no menu ⋮ da Home que disparava
+  `onChangePassword` + `onBiometric` juntos. |
 
 ---
 
@@ -475,7 +513,13 @@ seguintes (numeração contínua):
 - **Diff de texto** *(herdado, sem uso no fluxo principal)*: o utilitário
   `line_diff_engine.dart` continua sem papel na datação; candidato a
   remoção.
-
+- **Criptografia:** `cryptography`/`encrypt` (AES-256-GCM) + derivação de
+  chave via PBKDF2 (155k iterações, em isolate) + salt via
+  `flutter_secure_storage` *(mantido)*
+- **Biometria (novo em 5.3):** `local_auth` (autenticação nativa) +
+  `flutter_secure_storage` (guarda a chave derivada, cifrada pelo
+  Keystore do sistema). Ativação exige a senha na sessão; senha e
+  biometria são portas independentes.
 ---
 
 ## Estrutura de diretórios
@@ -609,3 +653,13 @@ para rastreabilidade.
 - **Exceção por nome** no `build.gradle.kts` (`receive_sharing_intent` →
   JVM 1.8): manutenção ativa — se o plugin migrar para Java 17, remover a
   exceção.
+  - **Troca de senha × biometria (v5.3):** trocar a senha re-cifra os
+  metadados com a chave nova; o enrolamento biométrico continua com a
+  chave antiga e fica **inválido** até o usuário reconfigurar. Efeito
+  esperado: próxima abertura com biometria cai em senha. Correção
+  planejada para a v5.3.1 (re-enrolar automaticamente após a troca).
+- **`destination_picker_screen` (v5.3):** o sensor biométrico abre
+  **sobre** o picker de destino. Funcional; ajuste de UX fica para a
+  v5.3.1 se incomodar.
+- **`UnlockOutcome.wrongPassword` (v5.3):** valor reservado; o fluxo
+  nunca o retorna. Candidato a remoção na v5.3.1.

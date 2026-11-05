@@ -16,6 +16,7 @@ class PickedAttachment {
 
   /// true quando o arquivo é temporário criado por nós (ex.: gravação de
   /// áudio) e pode ser apagado depois de copiado para o storage.
+  /// Arquivos escolhidos no picker não são nossos temporários: não os apague.
   final bool isTemporary;
 
   const PickedAttachment({
@@ -160,6 +161,8 @@ class AttachmentService {
   /// Inicia a gravação. Lança [AttachmentPermissionException] se o
   /// microfone for negado.
   Future<void> startRecording() async {
+    // O gravador pertence ao serviço; evitar uma segunda sessão protege o
+    // caminho atual e mantém o estado alinhado com o plugin.
     if (_recording) return;
 
     if (!await _recorder.hasPermission()) {
@@ -227,6 +230,8 @@ class AttachmentService {
       case MessageType.audio:
         return _pickWithFilePicker(
           FileType.audio,
+          // A categoria da mensagem não deve mudar só porque o MIME/extensão
+          // do novo arquivo não foi reconhecido pelo seletor.
           forceType: MessageType.audio,
         );
       case MessageType.documento:
@@ -246,6 +251,8 @@ class AttachmentService {
   }
 
   /// Grava em qual Conversa a captura foi pedida, ANTES de abrir a câmera.
+  /// O Android pode encerrar e recriar o processo durante a captura; esse ID
+  /// é o vínculo necessário para salvar o resultado na conversa original.
   Future<void> markPendingCapture(String conversationId) async {
     await (await _pendingFile()).writeAsString(conversationId, flush: true);
   }
@@ -277,6 +284,8 @@ class AttachmentService {
             : null);
     if (x == null) return null;
 
+    // Só recuperamos um item: o fluxo de captura abre uma foto ou um vídeo
+    // por vez e há um único conversationId pendente.
     return response.type == RetrieveType.video
         ? _fromXFile(x, MessageType.video, prefix: 'Vídeo')
         : _fromXFile(x, MessageType.imagem, prefix: 'Foto');

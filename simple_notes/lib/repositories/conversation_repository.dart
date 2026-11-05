@@ -95,7 +95,6 @@ class ConversationRepository {
     );
   }
 
-  
   Future<List<Message>?> searchMessagesByText(
     String conversationId,
     String query,
@@ -141,7 +140,6 @@ class ConversationRepository {
     rascunho: row.rascunho,
   );
 
-  
   /// RF06 (chat) — todas as Mensagens de uma Conversa, na ordem de envio
   /// (`position`). Note que isso NÃO é necessariamente a ordem por `data`:
   /// a data pode ser sobrescrita manualmente (RF02.6) e ficar "fora de
@@ -234,7 +232,6 @@ class ConversationRepository {
     return row?.protegidoPorSenha ?? false;
   }
 
-  
   Future<List<Message>> _decryptRows(
     List<MessageRow> rows,
     bool isProtected,
@@ -304,7 +301,6 @@ class ConversationRepository {
       }),
     );
   }
-
 
   Message _withPlaceholders(MessageRow row) => _messageToModel(
     row,
@@ -525,7 +521,6 @@ class ConversationRepository {
     }
   }
 
-  
   /// Sprint 7 (7.1a) — insere N mensagens de uma vez, em **duas fases**:
   ///
   /// **Fase 1 (fora da transação):** copia arquivos para o storage e cifra
@@ -741,8 +736,6 @@ class ConversationRepository {
     return createdIds;
   }
 
-
-
   /// Encaminha as mensagens de [messageIds] (todas da mesma origem) para
   /// [destinationConversationId]. Cada mensagem gera um **novo** `id` e um
   /// **novo** arquivo físico no destino (S7-1: cópia física por mensagem),
@@ -902,7 +895,6 @@ class ConversationRepository {
       total: source.length,
     );
   }
-
 
   /// Sprint 7 (7.1b) — devolve as [Message] dos [ids] informados, **já
   /// decifradas**, ordenadas por `position` (não pela ordem de [ids]).
@@ -1066,7 +1058,6 @@ class ConversationRepository {
       MessagesCompanion(tagId: Value(tagId)),
     );
   }
-
 
   /// Sprint 6: reordenar em conversa grande passa a ser **O(1)** no caso
   /// comum. A `position` vira uma chave esparsa (gaps de 1000); mover
@@ -1260,7 +1251,6 @@ class ConversationRepository {
       await storage.delete(p);
     }
   }
-
 
   /// Ativa a proteção por senha: gera salt, deriva a chave, **cifra** os
   /// campos sensíveis de todas as mensagens da conversa e grava
@@ -1604,6 +1594,19 @@ class ConversationRepository {
     return key;
   }
 
+  /// Sprint 8 — coloca a chave na sessão depois de a biometria ter
+  /// validado o usuário. Não verifica nada: é o "contrato controlado"
+  /// que a Home usa após `BiometricUnlock.unlock` devolver uma chave.
+  /// Equivalente ao final de `verifyConversationPassword`.
+  void unlockWithKey(String conversationId, List<int> key) {
+    _unlockedKeys[conversationId] = key;
+  }
+
+  /// Sprint 8 — chave da sessão atual, se houver. Usado por
+  /// "Ativar biometria" para pegar a chave que o usuário acabou de
+  /// provar com a senha (evita pedir de novo).
+  List<int>? unlockedKeyOrNull(String conversationId) =>
+      _unlockedKeys[conversationId];
 
   /// Devolve o valor a ser gravado em [field], conforme o estado da conversa:
   /// - Conversa **não protegida** → devolve [plaintext] como está.

@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../security/app_lock_shield.dart';
+import '../security/biometric_unlock.dart';
 
 /// Sprint 7 (7.1d) — instância única (por `ProviderScope`) do escudo de
 /// auto-bloqueio. Consumida por [LockOnBackground] e [ChatScreen].
@@ -10,4 +11,8 @@ final appLockShieldProvider = Provider<AppLockShield>((ref) {
   final shield = AppLockShield();
   ref.onDispose(shield.dispose);
   return shield;
+});
+
+final biometricUnlockProvider = Provider<BiometricUnlock>((ref) {
+  return BiometricUnlock();
 });

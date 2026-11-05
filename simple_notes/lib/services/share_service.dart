@@ -68,7 +68,8 @@ class ShareService {
         await src.copy(dest.path);
         out.add(_ShareFile(file: dest, displayName: uniqueName));
       } catch (_) {
-        // Ignora arquivo que não copiou — não bloqueia o share inteiro.
+        // Um anexo indisponível não deve impedir o envio dos demais nem do
+        // texto; o resultado conterá somente os arquivos copiados.
       }
     }
 
@@ -126,7 +127,8 @@ class ShareService {
 
     try {
       if (files.isEmpty && joinedText == null) {
-        // Nada para compartilhar (nem texto nem arquivo).
+        // Não abrir a share sheet vazia: isso não representa uma ação útil
+        // para o usuário.
         return const ShareResult('', ShareResultStatus.dismissed);
       }
             if (files.isEmpty) {
