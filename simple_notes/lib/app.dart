@@ -5,6 +5,7 @@ import 'providers/conversation_providers.dart';
 import 'screens/home_screen.dart';
 import 'widgets/lock_on_background.dart';
 import 'widgets/lost_capture_gate.dart';
+import 'widgets/share_receiver_gate.dart';
 
 class ArquivoApp extends StatelessWidget {
   const ArquivoApp({super.key});
@@ -16,7 +17,7 @@ class ArquivoApp extends StatelessWidget {
       // ... seu theme, locale, etc. (mantenha como está)
       home: const _DevSeedOnStart(
         child: LockOnBackground(
-          child: LostCaptureGate(child: HomeScreen()),
+          child: LostCaptureGate(child: ShareReceiverGate(child: HomeScreen())),
         ),
       ),
     );

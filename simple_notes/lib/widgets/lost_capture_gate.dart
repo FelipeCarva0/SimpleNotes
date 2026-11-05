@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/conversation_providers.dart';
 import '../screens/chat_screen.dart';
+import '../services/share_service.dart';
 
 /// Ao abrir o app, recupera uma foto/vídeo cuja captura foi interrompida
 /// porque o Android encerrou o app enquanto a câmera estava aberta.
@@ -21,6 +22,12 @@ class _LostCaptureGateState extends ConsumerState<LostCaptureGate> {
   }
 
   Future<void> _recover() async {
+    try {
+      await ref.read(shareServiceProvider).cleanupOrphans();
+    } catch (e) {
+      debugPrint('Falha na limpeza de share_tmp: $e');
+    }
+
     final service = ref.read(attachmentServiceProvider);
     final repo = ref.read(conversationRepositoryProvider);
 

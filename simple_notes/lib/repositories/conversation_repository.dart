@@ -8,6 +8,7 @@ import 'dart:io';
 import '../storage/media_storage.dart';
 import '../security/password_crypto.dart';
 import 'new_message.dart';
+import 'tag_repository.dart'; // ← ADICIONAR
 
 /// Cobre o CRUD de Conversa (RF01, Sprint 0) e, a partir da Sprint 1, as
 /// operações sobre Mensagem de texto (RF02, RF03). Anexos de arquivo
@@ -450,8 +451,7 @@ class ConversationRepository {
   /// `position` 0..N-1, que continua sendo uma sequência válida (o gap
   /// só é criado ao inserir novas).
   static const int _positionGap = 1000;
-    static const int _sqlChunkSize = 500;
-
+  static const int _sqlChunkSize = 500;
 
   Future<int> _nextPosition(String conversationId) async {
     final maxRow =
@@ -555,7 +555,7 @@ class ConversationRepository {
     }
   }
 
-    // ---------------------------------------------------------------------
+  // ---------------------------------------------------------------------
   // Mensagem — inserção em lote (Sprint 7 — 7.1a)
   // ---------------------------------------------------------------------
 
@@ -641,18 +641,20 @@ class ConversationRepository {
           final storedContent = isProtected
               ? await PasswordCrypto.encryptField(item.texto!, key!)
               : item.texto!;
-          prepared.add(_PreparedAppend(
-            tipo: item.tipo,
-            conteudoTexto: storedContent,
-            arquivoPath: null,
-            nomeOriginal: null,
-            nomeExibicao: null,
-            mimeType: null,
-            tamanhoBytes: null,
-            data: _dateOnly(item.data ?? DateTime.now()),
-            dataEditadaManualmente: item.dataEditadaManualmente,
-            tagId: item.tagId,
-          ));
+          prepared.add(
+            _PreparedAppend(
+              tipo: item.tipo,
+              conteudoTexto: storedContent,
+              arquivoPath: null,
+              nomeOriginal: null,
+              nomeExibicao: null,
+              mimeType: null,
+              tamanhoBytes: null,
+              data: _dateOnly(item.data ?? DateTime.now()),
+              dataEditadaManualmente: item.dataEditadaManualmente,
+              tagId: item.tagId,
+            ),
+          );
           continue;
         }
 
@@ -670,21 +672,23 @@ class ConversationRepository {
         final storedMime = stored.mimeType == null
             ? null
             : (isProtected
-                ? await PasswordCrypto.encryptField(stored.mimeType!, key!)
-                : stored.mimeType!);
+                  ? await PasswordCrypto.encryptField(stored.mimeType!, key!)
+                  : stored.mimeType!);
 
-        prepared.add(_PreparedAppend(
-          tipo: item.tipo,
-          conteudoTexto: null,
-          arquivoPath: stored.relativePath,
-          nomeOriginal: storedOriginal,
-          nomeExibicao: storedExibicao,
-          mimeType: storedMime,
-          tamanhoBytes: stored.sizeBytes,
-          data: _dateOnly(item.data ?? DateTime.now()),
-          dataEditadaManualmente: item.dataEditadaManualmente,
-          tagId: item.tagId,
-        ));
+        prepared.add(
+          _PreparedAppend(
+            tipo: item.tipo,
+            conteudoTexto: null,
+            arquivoPath: stored.relativePath,
+            nomeOriginal: storedOriginal,
+            nomeExibicao: storedExibicao,
+            mimeType: storedMime,
+            tamanhoBytes: stored.sizeBytes,
+            data: _dateOnly(item.data ?? DateTime.now()),
+            dataEditadaManualmente: item.dataEditadaManualmente,
+            tagId: item.tagId,
+          ),
+        );
       }
     } catch (_) {
       // Rollback da fase 1: apaga tudo o que copiou.
@@ -709,35 +713,39 @@ class ConversationRepository {
           final p = prepared[i];
           final id = _uuid.v4();
           createdIds.add(id);
-          await db.into(db.messages).insert(
-            MessagesCompanion.insert(
-              id: id,
-              conversationId: conversationId,
-              position: base + i * _positionGap,
-              tipo: Value(p.tipo),
-              conteudoTexto: p.conteudoTexto == null
-                  ? const Value.absent()
-                  : Value(p.conteudoTexto),
-              arquivoPath: p.arquivoPath == null
-                  ? const Value.absent()
-                  : Value(p.arquivoPath),
-              arquivoNomeOriginal: p.nomeOriginal == null
-                  ? const Value.absent()
-                  : Value(p.nomeOriginal),
-              arquivoNomeExibicao: p.nomeExibicao == null
-                  ? const Value.absent()
-                  : Value(p.nomeExibicao),
-              arquivoMimeType: p.mimeType == null
-                  ? const Value.absent()
-                  : Value(p.mimeType),
-              arquivoTamanhoBytes: p.tamanhoBytes == null
-                  ? const Value.absent()
-                  : Value(p.tamanhoBytes),
-              data: p.data,
-              dataEditadaManualmente: Value(p.dataEditadaManualmente),
-              tagId: p.tagId == null ? const Value.absent() : Value(p.tagId),
-            ),
-          );
+          await db
+              .into(db.messages)
+              .insert(
+                MessagesCompanion.insert(
+                  id: id,
+                  conversationId: conversationId,
+                  position: base + i * _positionGap,
+                  tipo: Value(p.tipo),
+                  conteudoTexto: p.conteudoTexto == null
+                      ? const Value.absent()
+                      : Value(p.conteudoTexto),
+                  arquivoPath: p.arquivoPath == null
+                      ? const Value.absent()
+                      : Value(p.arquivoPath),
+                  arquivoNomeOriginal: p.nomeOriginal == null
+                      ? const Value.absent()
+                      : Value(p.nomeOriginal),
+                  arquivoNomeExibicao: p.nomeExibicao == null
+                      ? const Value.absent()
+                      : Value(p.nomeExibicao),
+                  arquivoMimeType: p.mimeType == null
+                      ? const Value.absent()
+                      : Value(p.mimeType),
+                  arquivoTamanhoBytes: p.tamanhoBytes == null
+                      ? const Value.absent()
+                      : Value(p.tamanhoBytes),
+                  data: p.data,
+                  dataEditadaManualmente: Value(p.dataEditadaManualmente),
+                  tagId: p.tagId == null
+                      ? const Value.absent()
+                      : Value(p.tagId),
+                ),
+              );
         }
 
         // Uma única atualização de `atualizadoEm`.
@@ -766,7 +774,170 @@ class ConversationRepository {
     return createdIds;
   }
 
-    // ---------------------------------------------------------------------
+  // ---------------------------------------------------------------------
+  // Sprint 7 (7.4) — encaminhar mensagens entre conversas.
+  // ---------------------------------------------------------------------
+
+  /// Encaminha as mensagens de [messageIds] (todas da mesma origem) para
+  /// [destinationConversationId]. Cada mensagem gera um **novo** `id` e um
+  /// **novo** arquivo físico no destino (S7-1: cópia física por mensagem),
+  /// então excluir a origem **não** afeta o destino.
+  ///
+  /// Origem e destino podem ser protegidos por senha, mas o destino precisa
+  /// estar desbloqueado para que os metadados sejam cifrados.
+  ///
+  /// Opções:
+  /// - [keepOriginalDate] → `true` preserva `data`/`dataEditadaManualmente`
+  ///   de cada mensagem; `false` (default) usa a data de hoje.
+  /// - [carryTag] → `true` recria a tag da origem no destino
+  ///   (`TagRepository.createOrGet` por nome normalizado + cor) e a aplica
+  ///   na mensagem encaminhada; `false` (default) não leva tag.
+  ///
+  /// Arquivo físico ausente (órfão) → a mensagem é **pulada** e contada em
+  /// [ForwardResult.skippedCount]. Demais mensagens são encaminhadas
+  /// normalmente. Não há falha total por causa de um arquivo faltante.
+  ///
+  /// Processa em **lotes de 10** via `appendMessages`, com
+  /// [isCancelled] consultado entre lotes. Lotes já enviados permanecem
+  /// mesmo em caso de cancelamento/falha.
+  ///
+  /// Devolve [ForwardResult] com ids criados, total e ignoradas.
+  Future<ForwardResult> forwardMessages({
+    required String destinationConversationId,
+    required Iterable<String> messageIds,
+    bool keepOriginalDate = false,
+    bool carryTag = false,
+    bool Function()? isCancelled,
+  }) async {
+    final ids = messageIds.toSet().toList();
+    if (ids.isEmpty) {
+      return const ForwardResult(createdIds: [], skippedCount: 0, total: 0);
+    }
+
+    // Lê origem + destino para saber o estado de proteção.
+    final source = await getMessagesByIds(ids);
+    if (source.isEmpty) {
+      return const ForwardResult(createdIds: [], skippedCount: 0, total: 0);
+    }
+
+    final destRow = await (db.select(
+      db.conversations,
+    )..where((c) => c.id.equals(destinationConversationId))).getSingleOrNull();
+    if (destRow == null) {
+      throw StateError('A conversa de destino não existe mais.');
+    }
+    final destProtected = destRow.protegidoPorSenha;
+    if (destProtected && _unlockedKeys[destinationConversationId] == null) {
+      throw StateError(
+        'A conversa de destino está protegida, mas a sessão não está '
+        'desbloqueada. Desbloqueie antes de encaminhar.',
+      );
+    }
+
+    // Resolve tags no destino, se `carryTag`.
+    final tagRepo = TagRepository(db);
+    final tagMap = <String, String?>{}; // origem -> destino (null = falhou)
+    if (carryTag) {
+      final originTagIds = source
+          .map((m) => m.tagId)
+          .whereType<String>()
+          .toSet();
+      for (final originTagId in originTagIds) {
+        final tag = await (db.select(
+          db.tags,
+        )..where((t) => t.id.equals(originTagId))).getSingleOrNull();
+        if (tag == null) {
+          tagMap[originTagId] = null;
+          continue;
+        }
+        final created = await tagRepo.createOrGet(
+          conversationId: destinationConversationId,
+          nome: tag.nome,
+          cor: tag.cor,
+        );
+        tagMap[originTagId] = created.id;
+      }
+    }
+
+    // Monta os NewMessage. Fase 1 do appendMessages fará a cópia física.
+    // Arquivo ausente => pula a mensagem.
+    final items = <NewMessage>[];
+    var skipped = 0;
+    for (final m in source) {
+      if (isCancelled != null && isCancelled()) break;
+
+      if (m.tipo == MessageType.texto) {
+        items.add(
+          NewMessage.texto(
+            m.conteudoTexto ?? '',
+            data: keepOriginalDate ? m.data : null,
+            dataEditadaManualmente: keepOriginalDate
+                ? m.dataEditadaManualmente
+                : false,
+            tagId: carryTag && m.tagId != null ? tagMap[m.tagId] : null,
+          ),
+        );
+        continue;
+      }
+
+      final relPath = m.arquivoPath;
+      if (relPath == null) {
+        skipped++;
+        continue;
+      }
+      final physical = await storage.resolve(relPath);
+      if (!await physical.exists()) {
+        skipped++;
+        continue;
+      }
+
+      items.add(
+        NewMessage.arquivo(
+          tipo: m.tipo,
+          arquivo: physical,
+          nomeOriginal: m.arquivoNomeOriginal ?? 'arquivo',
+          nomeExibicao: m.arquivoNomeExibicao,
+          data: keepOriginalDate ? m.data : null,
+          dataEditadaManualmente: keepOriginalDate
+              ? m.dataEditadaManualmente
+              : false,
+          tagId: carryTag && m.tagId != null ? tagMap[m.tagId] : null,
+        ),
+      );
+    }
+
+    if (items.isEmpty) {
+      return ForwardResult(
+        createdIds: const [],
+        skippedCount: skipped,
+        total: source.length,
+      );
+    }
+
+    // Envio em lotes de 10.
+    const batchSize = 10;
+    final createdIds = <String>[];
+    for (var start = 0; start < items.length; start += batchSize) {
+      if (isCancelled != null && isCancelled()) break;
+      final end = (start + batchSize) > items.length
+          ? items.length
+          : start + batchSize;
+      final chunk = items.sublist(start, end);
+      final created = await appendMessages(
+        destinationConversationId,
+        chunk,
+        isCancelled: isCancelled,
+      );
+      createdIds.addAll(created);
+    }
+
+    return ForwardResult(
+      createdIds: createdIds,
+      skippedCount: skipped,
+      total: source.length,
+    );
+  }
+  // ---------------------------------------------------------------------
   // Mensagem — leitura por ids (Sprint 7 — 7.1b)
   // ---------------------------------------------------------------------
 
@@ -792,9 +963,9 @@ class ConversationRepository {
           ? unique.length
           : start + chunkSize;
       final chunk = unique.sublist(start, end);
-      final part = await (db.select(db.messages)
-            ..where((m) => m.id.isIn(chunk)))
-          .get();
+      final part = await (db.select(
+        db.messages,
+      )..where((m) => m.id.isIn(chunk))).get();
       rows.addAll(part);
     }
     if (rows.isEmpty) return const [];
@@ -1037,10 +1208,11 @@ class ConversationRepository {
       final head = ids.length <= _sqlChunkSize
           ? ids
           : ids.sublist(0, _sqlChunkSize);
-      final first = await (db.select(db.messages)
-            ..where((m) => m.id.isIn(head))
-            ..limit(1))
-          .getSingleOrNull();
+      final first =
+          await (db.select(db.messages)
+                ..where((m) => m.id.isIn(head))
+                ..limit(1))
+              .getSingleOrNull();
       if (first == null) return;
 
       final tag = await (db.select(
@@ -1112,9 +1284,9 @@ class ConversationRepository {
           ? ids.length
           : start + _sqlChunkSize;
       final chunk = ids.sublist(start, end);
-      final rows = await (db.select(db.messages)
-            ..where((m) => m.id.isIn(chunk)))
-          .get();
+      final rows = await (db.select(
+        db.messages,
+      )..where((m) => m.id.isIn(chunk))).get();
       for (final r in rows) {
         final p = r.arquivoPath;
         if (p != null) pathsToDelete.add(p);
@@ -1545,4 +1717,24 @@ class _PreparedAppend {
     required this.dataEditadaManualmente,
     required this.tagId,
   });
+}
+
+/// Sprint 7 (7.4) — resultado de [ConversationRepository.forwardMessages].
+class ForwardResult {
+  /// Ids criados no destino, na ordem em que foram gravados.
+  final List<String> createdIds;
+
+  /// Quantas mensagens da origem foram ignoradas (arquivo físico ausente).
+  final int skippedCount;
+
+  /// Quantas mensagens foram consideradas no total.
+  final int total;
+
+  const ForwardResult({
+    required this.createdIds,
+    required this.skippedCount,
+    required this.total,
+  });
+
+  int get forwardedCount => createdIds.length;
 }

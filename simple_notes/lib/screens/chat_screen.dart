@@ -26,6 +26,10 @@ import 'search_results_screen.dart';
 import '../providers/security_providers.dart';
 import '../widgets/tag_picker_many_sheet.dart';
 import '../repositories/new_message.dart';
+import 'destination_picker_screen.dart';
+import '../repositories/conversation_repository.dart';
+import '../services/share_service.dart';
+import 'package:share_plus/share_plus.dart' show ShareResult, ShareResultStatus;
 
 /// Tela de chat de uma Conversa (RF01, RF02, RF03) — Sprint 1: só mensagens
 /// de texto. Anexos de arquivo (RF02.3) entram na Sprint 2 e o gesto de
@@ -489,7 +493,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   /// Ordem final = ordem de seleção; todas com a data de hoje (regra
   /// do plano: "todas com a data do momento da inclusão, na ordem de
   /// seleção").
-    Future<void> _sendPickedMany(List<PickedAttachment> picked) async {
+  Future<void> _sendPickedMany(List<PickedAttachment> picked) async {
     if (picked.isEmpty) return;
     if (_sendingAttachment) return;
 
@@ -515,11 +519,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
 
         try {
           final items = chunk
-              .map((p) => NewMessage.arquivo(
-                    tipo: p.tipo,
-                    arquivo: p.file,
-                    nomeOriginal: p.nomeOriginal,
-                  ))
+              .map(
+                (p) => NewMessage.arquivo(
+                  tipo: p.tipo,
+                  arquivo: p.file,
+                  nomeOriginal: p.nomeOriginal,
+                ),
+              )
               .toList();
 
           await repo.appendMessages(
@@ -542,7 +548,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         if (p.isTemporary && await p.file.exists()) {
           try {
             await p.file.delete();
-          } catch (_) {/* ignora */}
+          } catch (_) {
+            /* ignora */
+          }
         }
       }
       if (mounted) {
@@ -1093,10 +1101,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         await _deleteMany();
       case 'copy':
         await _copySelected();
-      case 'share':
       case 'forward':
-        // Sprint 7 (7.4/7.5).
-        _showSnack('Em breve (blocos 7.4/7.5).');
+        await _forwardSelected();
+      case 'share':
+         await _shareSelected();
     }
     // Após qualquer ação **destrutiva/de conteúdo** via `⋮` em seleção,
     // sair da seleção (comportamento consolidado). As ações de "seleção
@@ -1213,6 +1221,168 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   void _cancelBatch() {
     // Setar um flag que o loop de `_sendPickedMany` consulta.
     _batchCancelled = true;
+  }
+    /// Sprint 7 (7.5) — compartilha as mensagens selecionadas via share
+  /// sheet do sistema. Aviso S7-8 quando a origem é protegida (os
+  /// metadados vão para fora em claro). Roda dentro do `AppLockShield`
+  /// para o Z1 não fechar a conversa no meio do share.
+  Future<void> _shareSelected() async {
+    if (_selectedIds.isEmpty) return;
+
+    final repo = ref.read(conversationRepositoryProvider);
+
+    // Busca as mensagens (decifradas, em ordem de position).
+    List<Message> messages;
+    try {
+      messages = await repo.getMessagesByIds(_selectedIds);
+    } catch (e) {
+      debugPrint('Erro ao buscar mensagens para compartilhar: $e');
+      _showSnack('Não foi possível compartilhar.');
+      return;
+    }
+    if (messages.isEmpty || !mounted) return;
+
+    // Aviso S7-8 se a origem é protegida.
+    final sourceConv = await repo.getById(widget.conversationId);
+    if (!mounted) return;
+    if (sourceConv?.protegidoPorSenha == true) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Compartilhar de conversa protegida?'),
+          content: const Text(
+            'Os textos e nomes dos arquivos serão enviados para outro '
+            'aplicativo, fora da criptografia desta conversa.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Compartilhar'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+    }
+
+    // Executa dentro do escudo (picker/share põe o app em paused).
+    final shareService = ref.read(shareServiceProvider);
+    final shield = ref.read(appLockShieldProvider);
+
+    ShareResult? result;
+    try {
+      result = await shield.run(() => shareService.shareMessages(messages));
+    } catch (e) {
+      debugPrint('Erro ao compartilhar: $e');
+      if (mounted) _showSnack('Não foi possível compartilhar.');
+      return;
+    }
+    if (!mounted) return;
+
+    _exitSelection();
+
+    // Feedback opcional: só informa em caso de erro do plugin.
+    if (result != null && result.status == ShareResultStatus.unavailable) {
+      _showSnack('Nenhum aplicativo disponível para receber o conteúdo.');
+    }
+  }
+
+    /// Sprint 7 (7.4) — encaminha as mensagens selecionadas para outra
+  /// conversa. Passos:
+  /// 1. `DestinationPickerScreen` (com a origem desabilitada).
+  /// 2. `showForwardOptionsDialog` (data/tag + aviso S7-8).
+  /// 3. `forwardMessages` no destino (repositório).
+  /// 4. Snack com resumo + "Abrir conversa".
+  Future<void> _forwardSelected() async {
+    if (_selectedIds.isEmpty) return;
+
+    // 1) Escolher destino.
+    final destinationId = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => DestinationPickerScreen(
+          disabledConversationId: widget.conversationId,
+          subtitle:
+              '${_selectedIds.length} ${_selectedIds.length == 1 ? "mensagem selecionada" : "mensagens selecionadas"}',
+        ),
+      ),
+    );
+    if (destinationId == null || !mounted) return;
+
+    // 2) Opções + aviso de segurança.
+    final destConv = await ref
+        .read(conversationRepositoryProvider)
+        .getById(destinationId);
+    if (destConv == null || !mounted) {
+      _showSnack('Conversa de destino indisponível.');
+      return;
+    }
+    final sourceConv = await ref
+        .read(conversationRepositoryProvider)
+        .getById(widget.conversationId);
+    if (sourceConv == null || !mounted) return;
+
+    final options = await showForwardOptionsDialog(
+      context,
+      messageCount: _selectedIds.length,
+      sourceProtected: sourceConv.protegidoPorSenha,
+      destinationProtected: destConv.protegidoPorSenha,
+    );
+    if (options == null || !mounted) return;
+
+    // 3) Executa.
+    final repo = ref.read(conversationRepositoryProvider);
+    ForwardResult result;
+    try {
+      result = await repo.forwardMessages(
+        destinationConversationId: destinationId,
+        messageIds: _selectedIds,
+        keepOriginalDate: options.keepOriginalDate,
+        carryTag: options.carryTag,
+      );
+    } catch (e) {
+      debugPrint('Erro ao encaminhar: $e');
+      _showSnack('Não foi possível encaminhar.');
+      return;
+    }
+    if (!mounted) return;
+
+    // 4) Feedback.
+    _exitSelection();
+
+    final forwarded = result.forwardedCount;
+    final skipped = result.skippedCount;
+    final base =
+        '$forwarded ${forwarded == 1 ? "mensagem encaminhada" : "mensagens encaminhadas"}';
+    final skipMsg = skipped > 0
+        ? ' ($skipped ${skipped == 1 ? "ignorada" : "ignoradas"}: arquivo indisponível)'
+        : '';
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text('$base$skipMsg em "${destConv.titulo}".'),
+          action: SnackBarAction(
+            label: 'Abrir',
+            onPressed: () {
+              if (!mounted) return;
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ChatScreen(conversationId: destinationId),
+                ),
+              );
+            },
+          ),
+          duration: const Duration(seconds: 6),
+        ),
+      );
   }
 
   /// Marca todas as mensagens reais da conversa, inclusive as fora da
@@ -1673,7 +1843,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
 
   /// RF02.6 / RF03 — sobrescrita manual da data, independente do fluxo
   /// automático.
-  
 
   /// RF04 — abre o sheet de tag da mensagem.
   void _openTagPicker(Message message) {
@@ -1710,8 +1879,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       total: total,
     );
   }
-
-
 
   PreferredSizeWidget _buildNormalAppBar(
     AsyncValue<Conversation?> conversationAsync,
